@@ -3,20 +3,16 @@ import email
 import imaplib
 import json
 import glob
-import os
 import requests
 from openpyxl import load_workbook
 global workbook
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 import pytesseract
 from PIL import Image
 from PyPDF2 import PdfReader
-import shutil
 import os
 from robot.api.deco import keyword
 from selenium import webdriver
-from SeleniumLibrary import SeleniumLibrary
 
 def fetch_user_details_by_number(file_path, target_id):
     global workbook
