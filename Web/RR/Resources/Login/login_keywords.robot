@@ -22,15 +22,33 @@ Open Application And Launch The URL
     Open Browser    https://stg-rr.sportz.io/    chrome
     Open Browser    https://stg-rr.sportz.io/    firefox
 
+#Launch Application
+#    ${env_data}  Get Environment Data    ${web_environment}
+#    ${env_data}  Create Dictionary  &{env_data}
+#    ${options} =  Evaluate  sys.modules['selenium.webdriver'].ChromeOptions()  sys, selenium.webdriver
+#    ${options} =  Evaluate  sys.modules['selenium.webdriver'].ChromeOptions()  sys, selenium.webdriver
+#    ${prefs}  Create Dictionary  download.default_directory=${default_download_path}
+#    Call Method  ${options}  add_experimental_option  prefs  ${prefs}
+##    Call Method  ${options}  add_argument  headless
+#    Open Browser     ${env_data.RR_application_url}    ${env_data.browser}  remote_url=${env_data.remote_url}  options=${options}
+#    Set Window Size    ${env_data.window_height}    ${env_data.window_width}
+##    Open Browser  ${env_data.RR_application_url}  ${env_data.browser}
+#    Maximize Browser Window
+
 Launch Application
     ${env_data}  Get Environment Data    ${web_environment}
     ${env_data}  Create Dictionary  &{env_data}
-    ${options} =  Evaluate  sys.modules['selenium.webdriver'].ChromeOptions()  sys, selenium.webdriver
-    ${options} =  Evaluate  sys.modules['selenium.webdriver'].ChromeOptions()  sys, selenium.webdriver
+    ${options}  Evaluate  sys.modules['selenium.webdriver'].ChromeOptions()  sys
+    Call Method  ${options}  add_argument  --disable-notifications
+    Call Method  ${options}  add_argument  --disable-infobars
+    Call Method  ${options}  add_argument  --disable-extensions
+    Call Method  ${options}  add_argument  --no-sandbox
+    Call Method  ${options}  add_argument  --headless
+    Call Method  ${options}  add_argument  --disable-dev-shm-usage
     ${prefs}  Create Dictionary  download.default_directory=${default_download_path}
     Call Method  ${options}  add_experimental_option  prefs  ${prefs}
 #    Call Method  ${options}  add_argument  headless
-    Open Browser     ${env_data.RR_application_url}    ${env_data.browser}  options=${options}
+    Open Browser   https://stg-rr.sportz.io/   Chrome
     Set Window Size    ${env_data.window_height}    ${env_data.window_width}
 #    Open Browser  ${env_data.RR_application_url}  ${env_data.browser}
     Maximize Browser Window
