@@ -1,4 +1,3 @@
-from PIL import Image
 import email
 import imaplib
 import json
