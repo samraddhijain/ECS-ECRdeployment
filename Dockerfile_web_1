@@ -4,8 +4,8 @@ FROM python:3.9-slim
 # Set the DEBIAN_FRONTEND to noninteractive to suppress prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system packages
-RUN apt-get update && apt-get install -y \
+# Update the image and install system packages
+RUN apt-get update --fix-missing && apt-get install -y \
     wget \
     xvfb \
     zip \
@@ -38,4 +38,3 @@ COPY . /robot
 
 # Set the default command to run Robot Framework with an option to specify tags
 CMD ["robot", "--i", "DarkMode", "/robot/Web/RR/"]
-
