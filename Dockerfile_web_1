@@ -47,5 +47,8 @@ RUN pip install robotframework
 # Copy the test files based on TAG_NAME
 COPY . /robot
 
+# Copy the environment JSON file into the container at /robot/Runners/Environment/web_environment.json
+COPY updated_env_web_1.json /robot/Runners/Environment/web_environment.json
+
 # Set the default command to run Robot Framework with an option to specify tags
 CMD ["robot", "--i", "Players", "/robot/Web/RR/"]
