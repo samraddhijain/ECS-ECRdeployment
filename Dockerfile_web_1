@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y \
     wmctrl
 
 # Install Robot Framework and SeleniumLibrary along with other required Python packages
-RUN pip install selenium==4.15.2 \
+RUN pip3 install selenium==4.15.2 \
                  robotframework==6.1.1 \
                  robotframework-seleniumlibrary==6.2.0 \
                  robotframework-retryfailed==0.2.0 \
@@ -35,20 +35,14 @@ RUN pip install selenium==4.15.2 \
                  webdrivermanager \
                  pandas
 
-# Use a base image with Python
-FROM python:3.9-slim
-
-# Set working directory
+# Set the working directory
 WORKDIR /robot
 
-# Install Robot Framework and required libraries
-RUN pip install robotframework
-
-# Copy the test files based on TAG_NAME
+# Copy the current directory contents into the container at /robot
 COPY . /robot
 
 # Copy the environment JSON file into the container at /robot/Runners/Environment/web_environment.json
 COPY updated_env_web_1.json /robot/Runners/Environment/web_environment.json
 
-# Set the default command to run Robot Framework with an option to specify tags
-CMD ["robot", "--i", "Players", "/robot/Web/RR/"]
+# Execute the Robot Framework test cases
+CMD ["robot","/robot/Web/RR/TestCases/Login/login_test.robot"]
