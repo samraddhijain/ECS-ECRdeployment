@@ -24,9 +24,6 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation \
     wmctrl
 
-RUN pip3 install robotframework-seleniumlibrary
-
-
 # Install Robot Framework and SeleniumLibrary along with other required Python packages
 RUN pip install selenium==4.15.2 \
                  robotframework==6.1.1 \
