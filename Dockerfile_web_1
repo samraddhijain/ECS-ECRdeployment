@@ -4,23 +4,14 @@ FROM python:3.9-slim
 # Set the DEBIAN_FRONTEND to noninteractive to suppress prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Update the image and install system packages
-RUN apt-get update --fix-missing && apt-get install -y \
-    wget \
-    xvfb \
-    zip \
-    ca-certificates \
-    libnss3-dev \
-    libasound2 \
-    libxss1 \
-    libappindicator3-1 \
-    libindicator7 \
-    gconf-service \
-    libgconf-2-4 \
-    libpango1.0-0 \
-    xdg-utils \
-    fonts-liberation \
-    wmctrl && \
+# Update the image
+RUN apt-get update --fix-missing
+
+# Install system packages in smaller groups to isolate issues
+RUN apt-get install -y wget xvfb zip ca-certificates && \
+    apt-get install -y libnss3-dev libasound2 libxss1 && \
+    apt-get install -y libappindicator3-1 libindicator7 gconf-service libgconf-2-4 && \
+    apt-get install -y libpango1.0-0 xdg-utils fonts-liberation wmctrl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
