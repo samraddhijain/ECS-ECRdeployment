@@ -1,0 +1,6 @@
+ipl_24_nav = "//span[normalize-space()='IPL 2024']"
+matches_page = "//h1[text()='Matches']"
+matches= "//span[normalize-space()='Matches']"
+fanzone_nav= "//span[normalize-space()='Fan Zone']"
+quizzerr_page = "//div[text()='Let’s get QUIZZING!']"
+quizzerr="//span[normalize-space()='QuizzeRR']"

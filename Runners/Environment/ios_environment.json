@@ -1,0 +1,16 @@
+
+{
+  "host": "http://127.0.0.1:4723",
+  "platformName": "iOS",
+  "deviceName": "iPhone 11",
+  "ignoreHiddenApiPolicyError": "true",
+  "noReset": "false",
+  "platformVersion": "16",
+  "automationName": "XCUITest",
+  "udid": "00008030-0009444036D2402E",
+  "bundleId": "com.knightclub.app",
+  "ipa_file": "/Users/vijay/Downloads/KKR.ipa",
+  "autoGrantPermissions": "true",
+  "lt_app_url": "lt://APP10160522261722255378244608",
+  "lt_host": "https://bhakti.kolapkar:XKlHEepfW9eTe52BJHDXYdBdpVXlUuUoDBhT0R3n2v1seJW71G@mobile-hub.lambdatest.com/wd/hub"
+}

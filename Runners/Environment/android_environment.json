@@ -1,0 +1,17 @@
+{
+  "host":"http://127.0.0.1:4723",
+  "platformName":"Android",
+  "deviceName":"bae57ac0",
+  "platformVersion": "12.0",
+  "application_sdk": "C:\\Users\\Priti\\Desktop\\SI\\wm-si-qa-automation\\Mobile\\Android\\KC\\TestData\\Application\\app-staging-debug.apk",
+  "ignoreHiddenApiPolicyError":"true",
+  "noReset":"false",
+  "automationName":"UiAutomator2",
+  "newCommandTimeout": "600",
+  "lt_host": "https://bhakti.kolapkar:XKlHEepfW9eTe52BJHDXYdBdpVXlUuUoDBhT0R3n2v1seJW71G@mobile-hub.lambdatest.com/wd/hub",
+  "lt_app_url": "lt://APP10160361821722251983355670",
+  "browserstack_host": "https://pritikakade_kqyoOr:MMfBZE6sxqz2KNieabxa@hub.browserstack.com/wd/hub",
+  "browserstack_app_url": "bs://9a40beb599775cc6b800853959d0d7332ab975ee"
+
+}
+
