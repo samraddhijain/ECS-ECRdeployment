@@ -1,0 +1,5 @@
+ipldropdown_value = '//span[contains(text(),"Points Table")]'
+accordin_location = '//button[@id ="standingsAccordion2"]'
+matchcard_location_first = '((//div[@class="match-listing"])[3]//div[@class="match-details"])[3]'
+matchcenter_text = '//div[@class="team team-won team-a"]//span[@class="score"]'
+matchscore_test = '(//div[@class="match-listing"])[1]/descendant::div[@class="match-details"]'
