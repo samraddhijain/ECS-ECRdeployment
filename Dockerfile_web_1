@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y \
     wmctrl
 
 # Install Robot Framework and SeleniumLibrary along with other required Python packages
-RUN pip3 install selenium==4.15.2 \
+RUN pip install selenium==4.15.2 \
                  robotframework==6.1.1 \
                  robotframework-seleniumlibrary==6.2.0 \
                  robotframework-retryfailed==0.2.0 \
