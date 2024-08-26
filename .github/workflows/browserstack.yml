@@ -4,27 +4,27 @@ on:
   push:
     branches:
       - main
-
-
   workflow_dispatch:
 
 jobs:
   build_and_push:
     runs-on: ubuntu-latest
-  
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Ensure all tags are fetched
 
-      - name: Install dos2unix
-        run: sudo apt-get install -y dos2unix
+      - name: Install system dependencies
+        run: sudo apt-get install -y dos2unix python3-dev libffi-dev libssl-dev
 
-      - name: Install python dependencies
+      - name: Install Python dependencies and upgrade problematic packages
         run: |
           python -m pip install --upgrade pip
+          pip install --upgrade setuptools wheel
           pip install -r requirements.txt
+          pip install --upgrade pyopenssl cryptography botocore
 
       - name: Convert line endings
         run: dos2unix ./build/git_update.sh
@@ -56,13 +56,10 @@ jobs:
           ECR_REPOSITORY: demo
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Find all Dockerfiles in the repository
           DOCKERFILES=$(find . -name 'Dockerfile*')
           > image-uris.txt  # Clear or create a file to store image URIs
           
-          # Loop through the Dockerfiles and build/push images
           for DOCKERFILE in $DOCKERFILES; do
-            # Extract the name part for tagging
             BASENAME=$(basename $DOCKERFILE)
             TAG=${BASENAME//Dockerfile_/}
             TAG=${TAG:-default}  # Fallback to 'default' if no specific tag
@@ -76,7 +73,6 @@ jobs:
             
             echo "IMAGE $IMAGE_URI is pushed to $ECR_REGISTRY/$ECR_REPOSITORY"
             
-            # Save the image URI to a file
             echo "$TAG:$IMAGE_URI" >> image-uris.txt
           done
 
@@ -84,7 +80,6 @@ jobs:
         run: |
           echo "Contents of image-uris.txt:"
           cat image-uris.txt
-
 
       - name: Install AWS CLI
         run: |
@@ -125,7 +120,6 @@ jobs:
           echo "Reading image URIs from image-uris.txt..."
           cat image-uris.txt
 
-          # Read image URIs from the file
           while IFS=: read -r TAG IMAGE_URI; do
             CONTAINER_NAME="${TAG}-container"
 
@@ -161,7 +155,6 @@ jobs:
             fi
           done < image-uris.txt
 
-          # Remove the trailing comma
           CONTAINERS_JSON=${CONTAINERS_JSON%,}
 
           TASK_DEF_JSON="{
@@ -189,11 +182,9 @@ jobs:
           SERVICE_NAME=my-service
           TASK_DEFINITION_NAME=my-task
 
-          # Check if the service already exists
           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
 
           if [ "$SERVICE_EXISTS" == "MISSING" ]; then
-            # Create the service if it doesn't exist
             aws ecs create-service \
               --cluster $CLUSTER_NAME \
               --service-name $SERVICE_NAME \
@@ -203,7 +194,6 @@ jobs:
               --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
               --region us-east-1
           else
-            # Update the service if it exists
             aws ecs update-service \
               --cluster $CLUSTER_NAME \
               --service $SERVICE_NAME \
