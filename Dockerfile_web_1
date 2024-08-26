@@ -4,6 +4,8 @@ FROM ubuntu:20.04
 # Set the DEBIAN_FRONTEND to noninteractive to suppress prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+sudo pip3 install robotframework-seleniumlibrary
+
 # Update the image and install system packages
 RUN apt-get update && apt-get install -y \
     python3 \
