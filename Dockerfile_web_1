@@ -1,13 +1,11 @@
-# Use the latest Ubuntu LTS as the base image
-FROM ubuntu:20.04
+# Use Python as the base image
+FROM python:3.9-slim
 
 # Set the DEBIAN_FRONTEND to noninteractive to suppress prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Update the image and install system packages
+# Install system packages
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
     wget \
     xvfb \
     zip \
@@ -22,30 +20,22 @@ RUN apt-get update && apt-get install -y \
     libpango1.0-0 \
     xdg-utils \
     fonts-liberation \
-    wmctrl
+    wmctrl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install Robot Framework and SeleniumLibrary along with other required Python packages
-RUN pip3 install selenium==4.15.2 \
-                 robotframework==6.1.1 \
-                 robotframework-seleniumlibrary==6.2.0 \
-                 robotframework-retryfailed==0.2.0 \
-                 robotframework-pabot==2.16.0 \
-                 openpyxl==3.1.2 \
-                 allure-robotframework==2.13.2 \
-                 webdrivermanager \
-                 pandas
+# Copy the requirements.txt to the working directory in the Docker image
+COPY requirements.txt /robot/requirements.txt
 
-# Use a base image with Python
-FROM python:3.9-slim
+# Install Python packages listed in requirements.txt
+RUN pip install --no-cache-dir -r /robot/requirements.txt
 
 # Set working directory
 WORKDIR /robot
 
-# Install Robot Framework and required libraries
-RUN pip install robotframework
-
-# Copy the test files based on TAG_NAME
+# Copy the test files to the working directory
 COPY . /robot
 
 # Set the default command to run Robot Framework with an option to specify tags
 CMD ["robot", "--i", "DarkMode", "/robot/Web/RR/"]
+
