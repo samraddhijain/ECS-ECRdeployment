@@ -39,7 +39,6 @@ Tc02 Verify the click on whatsapp icon
     Verify User should able to view barcode to scan
 
 Tc03 Login step with OTP existing user
-    [Tags]      Login
     &{data}    fetch data by id    ${testdata}     2
     Check Visibility And Click On Element   ${login_button}
     Verify Mobile Number Field
@@ -75,7 +74,6 @@ Tc06 Verify valid OTP
     Verify System Should Accept The OTP
 
 Tc07 Verify invalid OTP
-    [Tags]      Login
     &{data}    fetch data by id    ${testdata}     1
     Login With Otp For Web    ${login_button}    ${mobile_number_field}    ${data}
     Check Visibility And Click On Element    ${whatsapp_no_button}
