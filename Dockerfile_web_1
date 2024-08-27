@@ -24,10 +24,11 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation \
     wmctrl
 
-RUN pip3 install requirement.txt
 
 # Set the working directory
 WORKDIR /robot
+
+RUN pip3 install robot/requirement.txt
 
 # Copy the current directory contents into the container at /robot
 COPY . /robot
