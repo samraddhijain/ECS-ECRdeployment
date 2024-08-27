@@ -3,7 +3,7 @@ Library    SeleniumLibrary
 Library    Collections
 Library    String
 Library    BuiltIn
-Library    ../../../../../CommonBase/Utilities/user_keywords.py
+Library    ../../../../CommonBase/Utilities/user_keywords.py
 Variables  ../../../../Downloads/Downloads.py
 Variables  ../../PageObjects/Login/login_page_locators.py
 Resource    ../Fixtures and Results/fixturesresults_keywords.robot
