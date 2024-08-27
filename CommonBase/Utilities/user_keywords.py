@@ -2,6 +2,7 @@ import email
 import imaplib
 import json
 import glob
+import requests
 from openpyxl import load_workbook
 global workbook
 from selenium.webdriver.common.by import By
