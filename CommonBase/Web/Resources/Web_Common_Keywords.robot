@@ -1,8 +1,8 @@
 *** Settings ***
-Library     SeleniumLibrary
+Library    SeleniumLibrary
 Library    Collections
 Library    String
-Library    ../../../../CommonBase/Utilities/user_keywords.py
+Library    ${CURDIR}${/}..${/}..${/}Utilities${/}user_keywords.py
 Library    OperatingSystem
 
 *** Variables ***

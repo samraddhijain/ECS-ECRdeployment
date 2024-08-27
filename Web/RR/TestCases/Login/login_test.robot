@@ -16,6 +16,7 @@ ${testdata}    ${CURDIR}${/}..${/}..${/}TestData${/}LoginTestdata.xlsx
 *** Test Cases ***
 #OTP less login
 Tc01 Verify if new clicks on yes button
+    [Tags]      Login
     &{data}    fetch data by id    ${testdata}      2
     Check Visibility And Click On Element   ${login_button}
     Enter Mobile Number     ${data['mobile_number']}
@@ -23,12 +24,14 @@ Tc01 Verify if new clicks on yes button
     Verify OTP less sign in pop-up should get displayed to user
 
 Tc0121 Verify if new clicks on yes button
+    [Tags]      Login
     ${data}    fetch data by id    ${testdata}      2
     Login With Otp For Web    ${login_button}    ${mobile_number_field}    ${data}
     Check Visibility And Click On Element    ${whatsapp_no_button}
     Verify OTP less sign in pop-up should get displayed to user
 
 Tc02 Verify the click on whatsapp icon
+    [Tags]      Login
     ${data}    fetch data by id    ${testdata}      1
     Login With Otp For Web    ${login_button}    ${mobile_number_field}    ${data}
     Check Visibility And Click On Element    ${whatsapp_yes_button}

@@ -5,7 +5,7 @@ Library    String
 Library    Collections
 Library    SeleniumLibrary
 Library     JSONLibrary
-Resource  ../../../../CommonBase/Cms/Resources/otp_keywords.robot
+Resource  ${CURDIR}${/}..${/}..${/}..${/}..${/}CommonBase${/}Utilities${/}user_keywords.py
 
 *** Variables ***
 ${base_url}  https://stg-rr.sportz.io

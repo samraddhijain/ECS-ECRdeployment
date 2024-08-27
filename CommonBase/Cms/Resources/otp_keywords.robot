@@ -2,7 +2,7 @@
 Library    SeleniumLibrary
 Library    OperatingSystem
 Variables  ../../../Downloads/Downloads.py
-Library    ../../../Utilities/user_keywords.py
+Library    ${CURDIR}${/}..${/}..${/}Utilities${/}user_keywords.py
 Variables  ../PageObjects/cms_locators.py
 Resource    ../../Web/Resources/Web_Common_Keywords.robot
 

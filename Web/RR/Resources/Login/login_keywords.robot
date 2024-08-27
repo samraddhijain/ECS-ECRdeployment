@@ -3,14 +3,14 @@ Library    SeleniumLibrary
 Library    Collections
 Library    String
 Library    BuiltIn
-Library    ../../../../CommonBase/Utilities/user_keywords.py
+Library    ${CURDIR}${/}..${/}..${/}..${/}..${/}CommonBase${/}Utilities${/}user_keywords.py
 Variables  ../../../../Downloads/Downloads.py
 Variables  ../../PageObjects/Login/login_page_locators.py
 Resource    ../Fixtures and Results/fixturesresults_keywords.robot
 Resource    ../../../../CommonBase/Web/Resources/Web_Common_Keywords.robot
 
 *** Variables ***
-${web_environment}  ${CURDIR}${/}..${/}..${/}..${/}..${/}Runners${/}Environment${/}web_environment.json
+${web_environment}      ${CURDIR}${/}..${/}..${/}..${/}..${/}Runners${/}Environment${/}web_environment.json
 ${VALID_EMAIL_REGEX}    ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
 
 *** Keywords ***
@@ -26,11 +26,10 @@ Open Application And Launch The URL
 #    ${env_data}  Get Environment Data    ${web_environment}
 #    ${env_data}  Create Dictionary  &{env_data}
 #    ${options} =  Evaluate  sys.modules['selenium.webdriver'].ChromeOptions()  sys, selenium.webdriver
-#    ${options} =  Evaluate  sys.modules['selenium.webdriver'].ChromeOptions()  sys, selenium.webdriver
 #    ${prefs}  Create Dictionary  download.default_directory=${default_download_path}
 #    Call Method  ${options}  add_experimental_option  prefs  ${prefs}
 ##    Call Method  ${options}  add_argument  headless
-#    Open Browser     ${env_data.RR_application_url}    ${env_data.browser}  remote_url=${env_data.remote_url}  options=${options}
+#    Open Browser     ${env_data.RR_application_url}    ${env_data.browser}  options=${options}
 #    Set Window Size    ${env_data.window_height}    ${env_data.window_width}
 ##    Open Browser  ${env_data.RR_application_url}  ${env_data.browser}
 #    Maximize Browser Window
@@ -48,6 +47,7 @@ Launch Application
     ${prefs}  Create Dictionary  download.default_directory=${default_download_path}
     Call Method  ${options}  add_experimental_option  prefs  ${prefs}
 #    Call Method  ${options}  add_argument  headless
+    Log To Console    ${env_data.RR_application_url}
     Open Browser     ${env_data.RR_application_url}    ${env_data.browser}  options=${options}
     Set Window Size    ${env_data.window_height}    ${env_data.window_width}
 #    Open Browser  ${env_data.RR_application_url}  ${env_data.browser}

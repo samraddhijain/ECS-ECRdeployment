@@ -4,7 +4,7 @@ Library    OperatingSystem
 Resource    ../../Resources/Login/login_keywords.robot
 Variables     ../../PageObjects/Hindi_homescreen/hindi_homescreen_locators.py
 Resource    ../../../../CommonBase/Web/Resources/Web_Common_Keywords.robot
-Library    ../../../../CommonBase/Utilities/user_keywords.py
+Library    ${CURDIR}${/}..${/}..${/}..${/}..${/}CommonBase${/}Utilities${/}user_keywords.py
 
 *** Variables ***
 ${SWIPE_LIMIT}      100
