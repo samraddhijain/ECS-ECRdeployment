@@ -24,16 +24,7 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation \
     wmctrl
 
-# Install Robot Framework and SeleniumLibrary along with other required Python packages
-RUN pip3 install selenium==4.15.2 \
-                 robotframework==6.1.1 \
-                 robotframework-seleniumlibrary==6.2.0 \
-                 robotframework-retryfailed==0.2.0 \
-                 robotframework-pabot==2.16.0 \
-                 openpyxl==3.1.2 \
-                 allure-robotframework==2.13.2 \
-                 webdrivermanager \
-                 pandas
+RUN pip3 install requirement.txt
 
 # Set the working directory
 WORKDIR /robot
