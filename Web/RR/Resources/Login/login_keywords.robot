@@ -48,7 +48,7 @@ Launch Application
     ${prefs}  Create Dictionary  download.default_directory=${default_download_path}
     Call Method  ${options}  add_experimental_option  prefs  ${prefs}
 #    Call Method  ${options}  add_argument  headless
-    Open Browser   https://stg-rr.sportz.io/   Chrome
+    Open Browser     ${env_data.RR_application_url}    ${env_data.browser}  options=${options}
     Set Window Size    ${env_data.window_height}    ${env_data.window_width}
 #    Open Browser  ${env_data.RR_application_url}  ${env_data.browser}
     Maximize Browser Window
