@@ -51,6 +51,12 @@ jobs:
         run: |
           # Find all Dockerfiles in the repository
           DOCKERFILES=$(find . -name 'Dockerfile*')
+          
+          if [ -z "$DOCKERFILES" ]; then
+            echo "No Dockerfiles found. Exiting."
+            exit 1
+          fi
+
           > image-uris.txt  # Clear or create a file to store image URIs
           
           # Loop through the Dockerfiles and build/push images
@@ -77,6 +83,12 @@ jobs:
         run: |
           echo "Contents of image-uris.txt:"
           cat image-uris.txt
+
+          # Check if image-uris.txt is empty
+          if [ ! -s image-uris.txt ]; then
+            echo "No image URIs were written to image-uris.txt. Exiting."
+            exit 1
+          fi
 
       - name: Install AWS CLI
         run: |
