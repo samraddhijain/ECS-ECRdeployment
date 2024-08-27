@@ -51,4 +51,4 @@ COPY updated_env_web_1.json /robot/Runners/Environment/web_environment.json
 #CMD ["robot","/robot/Web/RR/TestCases/News listing/News_listing_test.robot"]
 
 # Set the default command to run Robot Framework with an option to specify tags
-CMD ["robot", "--i", "DarkMode", "/robot/Web/RR/"]
+CMD ["robot", "--i", "DarkMode", "/robot/Web/RR/TestCases"]
