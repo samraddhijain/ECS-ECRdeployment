@@ -78,25 +78,19 @@ jobs:
           echo "Contents of image-uris.txt:"
           cat image-uris.txt
 
-      # Run Robot Framework Tests
-      - name: Run Robot Framework Tests
-        run: |
-          robot --output /robot/output.xml /path/to/your/tests
-
-      # Upload Robot Framework Results to S3
-      - name: Upload Robot Framework Results to S3
-        run: |
-          aws s3 cp /robot/output.xml s3://your-s3-bucket-name/path/to/output.xml --region us-east-1
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
       - name: Install AWS CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y awscli
           aws --version
+
+      - name: Create S3 Bucket for Robot Framework Results
+        run: |
+          aws s3api create-bucket --bucket my-robot-results-bucket --region us-east-1 --create-bucket-configuration LocationConstraint=us-east-1
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
       - name: Create Log Group
         run: |
@@ -120,7 +114,7 @@ jobs:
           CLUSTER_NAME=my-cluster
           TASK_DEFINITION_NAME=my-task
 
-          DOCKERFILES=$(find . -name 'dockerfile*')
+          DOCKERFILES=$(find . -name 'Dockerfile*')
           CONTAINERS_JSON=""
           PORT=8080  # Starting port for containerPort and hostPort
           CONTAINER_CPU=256  # CPU units for each container
@@ -217,6 +211,14 @@ jobs:
               --desired-count 1 \
               --region us-east-1
           fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Upload Robot Framework results to S3
+        run: |
+          aws s3 cp /robot/Web/RR/TestCases/output.xml s3://my-robot-results-bucket/robot-results/output.xml --region us-east-1
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
