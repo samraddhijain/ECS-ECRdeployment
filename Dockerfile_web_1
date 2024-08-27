@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
 # Set the working directory
 WORKDIR /robot
 
-RUN pip3 install robot/requirement.txt
+RUN pip3 install requirement.txt
 
 # Copy the current directory contents into the container at /robot
 COPY . /robot
