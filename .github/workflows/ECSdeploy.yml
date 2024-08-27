@@ -1,4 +1,4 @@
- name: Build and Push Multiple Docker Images to AWS ECR
+name: Build and Push Multiple Docker Images to AWS ECR
 
  on:
    push:
@@ -106,8 +106,8 @@
        - name: Register ECS Task Definition
          id: register-task-def
          run: |
-           CLUSTER_NAME=demo-cluster
-           TASK_DEFINITION_NAME=demo-task
+           CLUSTER_NAME=my-cluster
+           TASK_DEFINITION_NAME=my-task
 
            DOCKERFILES=$(find . -name 'Dockerfile*')
            CONTAINERS_JSON=""
@@ -180,9 +180,9 @@
 
        - name: Create or Update ECS Service
          run: |
-           CLUSTER_NAME=demo-cluster
-           SERVICE_NAME=demo-service
-           TASK_DEFINITION_NAME=demo-task
+           CLUSTER_NAME=my-cluster
+           SERVICE_NAME=my-service
+           TASK_DEFINITION_NAME=my-task
 
            # Check if the service already exists
            SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
