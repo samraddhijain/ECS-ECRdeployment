@@ -71,7 +71,7 @@ COPY . /robot
 RUN pip install --no-cache-dir -r /robot/requirements.txt
 
 # Copy the environment JSON file into the container at /robot/Runners/Environment/web_environment.json
-COPY {json_file}.json /robot/Runners/Environment/{platform}_environment.json
+COPY {json_file} /robot/Runners/Environment/{platform}_environment.json
 
 # Set the default command to run Robot Framework with an option to specify tags
 CMD ["robot", "--i", "Login", "/robot/Web/RR/TestCases"]
