@@ -21,7 +21,7 @@ Verify the filter functionality by year
     URL Change And Updated For Ipl Page
     Fixtures And Results 2023 Will Show With Recent lable
 
-Verify the filter functionality by teams\
+Verify the filter functionality by teams
     [Tags]      FixturesandResults
     Navigation Keyword    ${ipl_24_nav}    ${matches_page}  ${matches}
     Check Visibility And Click On Element    ${filter_iplpage}
@@ -30,7 +30,6 @@ Verify the filter functionality by teams\
     View Only Team Fixtures     ${kkr_text}
 
 Verify the filter functionlity by status
-    [Tags]      FixturesandResults
     Navigation Keyword    ${ipl_24_nav}    ${matches_page}  ${matches}
     Check Visibility And Click On Element    ${filter_iplpage}
     Filter By Categories    ${filter_status}     ${filter_statusval}
