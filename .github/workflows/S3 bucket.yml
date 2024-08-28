@@ -95,6 +95,14 @@
            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
            AWS_DEFAULT_REGION: us-east-1
 
+       - name: Create S3 Bucket for Robot Framework Results
+         run: |
+          aws s3api create-bucket --bucket my-robot-results-bucket --region us-east-1
+         env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
        - name: Create ECS Cluster
          run: |
            aws ecs create-cluster --cluster-name my-cluster --region us-east-1 || true
@@ -210,3 +218,11 @@
            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
            AWS_DEFAULT_REGION: us-east-1
+
+       - name: Upload Robot Framework results to S3
+         run: |
+          aws s3 cp /robot/log/output.xml s3://my-robot-results-bucket/robot-results/output.xml --region us-east-1
+         env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
