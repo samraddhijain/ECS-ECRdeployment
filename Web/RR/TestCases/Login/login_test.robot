@@ -49,17 +49,14 @@ Tc03 Login step with OTP existing user
     Capture Page Screenshot
 
 Tc04 Verify if new user enters mobile number and clicks on no button
-    [Tags]      Login
     ${data}    fetch data by id    ${testdata}     1
     Login With Otp For Web    ${login_button}    ${mobile_number_field}    ${data}
 
 Tc05 Verify the OTP section
-    [Tags]      Login
     ${data}    fetch data by id    ${testdata}     3
     Login With Otp For Web    ${login_button}    ${mobile_number_field}    ${data}
 
 Tc06 Verify valid OTP
-    [Tags]      Login
     &{data}    fetch data by id    ${testdata}      2
     Login With Otp For Web    ${login_button}    ${mobile_number_field}    ${data}
     Check Visibility And Click On Element    ${whatsapp_no_button}
