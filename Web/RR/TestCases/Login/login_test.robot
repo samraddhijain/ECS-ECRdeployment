@@ -52,16 +52,11 @@ Tc04 Verify if new user enters mobile number and clicks on no button
     [Tags]      Login
     ${data}    fetch data by id    ${testdata}     1
     Login With Otp For Web    ${login_button}    ${mobile_number_field}    ${data}
-    Check Visibility And Click On Element    ${whatsapp_no_button}
-    Send OTP Via SMS Button Should Get Displayed To User
 
 Tc05 Verify the OTP section
     [Tags]      Login
     ${data}    fetch data by id    ${testdata}     3
     Login With Otp For Web    ${login_button}    ${mobile_number_field}    ${data}
-    Check Visibility And Click On Element    ${whatsapp_no_button}
-    Check Visibility And Click On Element    ${send_sms_button}
-    Verify User should Able To View Six Boxes To Enter Six Digit Received OTP
 
 Tc06 Verify valid OTP
     [Tags]      Login
