@@ -127,4 +127,4 @@ if __name__ == "__main__":
 
     remote_url = "https://github.com/PritiKakadeIndexnine/Execution_Demo.git"
 
-    orthagonal_operations.commit_and_push_changes("web_Aws_Execution", remote_url)
+    orthagonal_operations.commit_and_push_changes("OATS_execution", remote_url)
