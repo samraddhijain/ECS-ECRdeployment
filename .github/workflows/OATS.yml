@@ -1,4 +1,4 @@
-  name: Build and Push Multiple Docker Images to AWS ECR
+  name: Multiple Docker Images to AWS ECR through OATS
 
   on:
     push:
@@ -52,7 +52,7 @@
             IMAGE_TAG: ${{ github.sha }}
           run: |
             # Find all Dockerfiles in the repository
-            DOCKERFILES=$(find . -name 'Dockerfile*')
+            DOCKERFILES=$(find ./web_dockerfiles -name 'Dockerfile*')
             > image-uris.txt  # Clear or create a file to store image URIs
           
             # Loop through the Dockerfiles and build/push images
