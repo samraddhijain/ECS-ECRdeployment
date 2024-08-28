@@ -20,35 +20,47 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Update the image and install system packages
-RUN apt-get update && apt-get install -y \\
-    python3 \\
-    python3-pip \\
-    wget \\
-    xvfb \\
-    zip \\
-    ca-certificates \\
-    libnss3-dev \\
-    libasound2 \\
-    libxss1 \\
-    libappindicator3-1 \\
-    libindicator7 \\
-    gconf-service \\
-    libgconf-2-4 \\
-    libpango1.0-0 \\
-    xdg-utils \\
-    fonts-liberation \\
-    wmctrl
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    wget \
+    xvfb \
+    zip \
+    ca-certificates \
+    libnss3-dev \
+    libasound2 \
+    libxss1 \
+    libappindicator3-1 \
+    libindicator7 \
+    gconf-service \
+    libgconf-2-4 \
+    libpango1.0-0 \
+    xdg-utils \
+    fonts-liberation \
+    wmctrl \
+    curl
+
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* || true
+
 
 # Install Robot Framework and SeleniumLibrary along with other required Python packages
-RUN pip3 install selenium==4.15.2 \\
-                 robotframework==6.1.1 \\
-                 robotframework-seleniumlibrary==6.2.0 \\
-                 robotframework-retryfailed==0.2.0 \\
-                 robotframework-pabot==2.16.0 \\
-                 openpyxl==3.1.2 \\
-                 allure-robotframework==2.13.2 \\
-                 webdrivermanager \\
+RUN pip3 install selenium==4.15.2 \
+                 robotframework==6.1.1 \
+                 robotframework-seleniumlibrary==6.2.0 \
+                 robotframework-retryfailed==0.2.0 \
+                 robotframework-pabot==2.16.0 \
+                 openpyxl==3.1.2 \
+                 allure-robotframework==2.13.2 \
+                 webdrivermanager \
                  pandas
+
+# Install ChromeDriver using WebDriverManager
+#RUN webdrivermanager chrome --linkpath /usr/local/bin
 
 # Set the working directory
 WORKDIR /robot
@@ -56,12 +68,16 @@ WORKDIR /robot
 # Copy the current directory contents into the container at /robot
 COPY . /robot
 
-# Copy the environment JSON file into the container at /robot/Runners/Environment/{platform}_environment.json
+# Install additional Python dependencies
+RUN pip install --no-cache-dir -r /robot/requirements.txt
+
+# Copy the environment JSON file into the container at /robot/Runners/Environment/web_environment.json
 COPY {json_file} /robot/Runners/Environment/{platform}_environment.json
 
-# Execute the Robot Framework test cases
-CMD ["robot","/robot/Web/RR/TestCases/Login/login_test.robot"]
+# Set the default command to run Robot Framework with an option to specify tags
+CMD ["robot", "--i", "FixturesandResults", "/robot/Web/RR/TestCases"]
 """
+
     formatted_content = dockerfile_content.format(json_file=json_file, platform=platform)
 
     file_output_path = os.path.join(dockerfiles_folder, output_file)
