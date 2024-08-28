@@ -38,7 +38,6 @@ Verify the filter functionlity by status
     View Only Upcoming Matches Of Rajasthan Royals
 
 Verify reset filter functionality
-    [Tags]      FixturesandResults
     Navigation Keyword    ${ipl_24_nav}    ${matches_page}  ${matches}
     Check Visibility And Click On Element    ${filter_iplpage}
     Filter By Categories    ${filter_status}     ${filter_statusval}
