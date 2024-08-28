@@ -74,7 +74,7 @@ RUN pip install --no-cache-dir -r /robot/requirements.txt
 COPY {json_file} /robot/Runners/Environment/{platform}_environment.json
 
 # Set the default command to run Robot Framework with an option to specify tags
-CMD ["robot", "--i", "Login", "/robot/Web/RR/TestCases"]
+CMD ["robot", "--i", "FixturesandResults", "/robot/Web/RR/TestCases"]
 """
     formatted_content = dockerfile_content.format(json_file=json_file, platform=platform)
 

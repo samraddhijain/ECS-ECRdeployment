@@ -59,4 +59,4 @@ RUN pip install --no-cache-dir -r /robot/requirements.txt
 COPY updated_env_web_2.json /robot/Runners/Environment/web_environment.json
 
 # Set the default command to run Robot Framework with an option to specify tags
-CMD ["robot", "--i", "Login", "/robot/Web/RR/TestCases"]
+CMD ["robot", "--i", "FixturesandResults", "/robot/Web/RR/TestCases"]
