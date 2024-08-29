@@ -18,6 +18,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+      # Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -25,14 +26,15 @@ jobs:
            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
            aws-region: us-east-1
 
+      # Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Check and Create ECR Repository
-      - name: Check and Create ECR Repository
+      # Create ECR Repository
+      - name: Create ECR Repository
         run: |
-          REPO_NAME="si_repo"
+          REPO_NAME="demo"
           if aws ecr describe-repositories --repository-names $REPO_NAME --region us-east-1 2>/dev/null; then
             echo "ECR Repository $REPO_NAME already exists."
           else
@@ -45,7 +47,7 @@ jobs:
         id: build-and-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: si_repo
+          ECR_REPOSITORY: demo
           IMAGE_TAG: ${{ github.sha }}
         run: |
           DOCKERFILES=$(find . -name 'Dockerfile*')
@@ -82,94 +84,74 @@ jobs:
           sudo apt-get install -y awscli
           aws --version
 
-      # Create S3 Bucket for Robot Framework Results
-      - name: Create S3 Bucket for Robot Framework Results
+      # Create or Verify ECS Cluster
+      - name: Create or Verify ECS Cluster
+        run: |
+          CLUSTER_NAME="SI-cluster"
+          if aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].status' --output text --region us-east-1 2>/dev/null | grep -q "ACTIVE"; then
+            echo "Cluster $CLUSTER_NAME already exists."
+          else
+            echo "Creating ECS Cluster $CLUSTER_NAME..."
+            aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1
+          fi
+
+      # Register ECS Task Definition
+      - name: Register ECS Task Definition
+        run: |
+          TASK_DEFINITION_NAME="SI-task"
+          if aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region us-east-1 2>/dev/null; then
+            echo "Task Definition $TASK_DEFINITION_NAME already exists. Skipping registration."
+          else
+            echo "Registering ECS Task Definition $TASK_DEFINITION_NAME..."
+            # Your task definition registration logic goes here
+          fi
+
+      # Create or Update ECS Service
+      - name: Create or Update ECS Service
+        run: |
+          CLUSTER_NAME="SI-cluster"
+          SERVICE_NAME="SI-service"
+          TASK_DEFINITION_NAME="SI-task"
+
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
+
+          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+            echo "Service $SERVICE_NAME does not exist. Creating service..."
+            aws ecs create-service \
+              --cluster $CLUSTER_NAME \
+              --service-name $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+              --region us-east-1
+          else
+            echo "Service $SERVICE_NAME already exists. Updating service..."
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --region us-east-1
+          fi
+
+      # Run Robot Framework Tests
+      - name: Run Robot Framework Tests
+        run: |
+          docker run --rm \
+            -v $PWD:/robot \
+            ${{ steps.build-and-push.outputs.IMAGE_URI }}
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # Upload Logs to S3
+      - name: Upload Logs to S3
         run: |
           BUCKET_NAME="my-robot-results-bucket"
-          if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
-            echo "Bucket does not exist. Creating bucket..."
-            aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1
-          else
-            echo "Bucket already exists. Skipping creation."
-          fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
-      # Create Log Group
-      - name: Create Log Group
-        run: |
-          LOG_GROUP_NAME="/ecs/my-task"
-          if ! aws logs describe-log-groups --log-group-name-prefix $LOG_GROUP_NAME --region us-east-1 | grep -q $LOG_GROUP_NAME; then
-            echo "Log group $LOG_GROUP_NAME does not exist. Creating log group..."
-            aws logs create-log-group --log-group-name $LOG_GROUP_NAME --region us-east-1
-          else
-            echo "Log group $LOG_GROUP_NAME already exists. Skipping creation."
-          fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
-      - name: Check and Create ECS Cluster
-  run: |
-    CLUSTER_NAME="SI-cluster"
-    if aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].status' --output text --region us-east-1 2>/dev/null | grep -q "ACTIVE"; then
-      echo "Cluster $CLUSTER_NAME already exists."
-    else
-      echo "Creating ECS Cluster $CLUSTER_NAME..."
-      aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1
-    fi
-
-    - name: Register ECS Task Definition
-      run: |
-        TASK_DEFINITION_NAME="SI-task"
-        if aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region us-east-1 2>/dev/null; then
-          echo "Task Definition $TASK_DEFINITION_NAME already exists. Skipping registration."
-        else
-          echo "Registering ECS Task Definition $TASK_DEFINITION_NAME..."
-          # Your task definition registration logic goes here
-        fi
-
-    - name: Check and Create ECS Service
-      run: |
-        CLUSTER_NAME="SI-cluster"
-        SERVICE_NAME="SI-service"
-        TASK_DEFINITION_NAME="SI-task"
-    
-        SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-    
-        if [ "$SERVICE_EXISTS" == "MISSING" ]; then
-          echo "Service $SERVICE_NAME does not exist. Creating service..."
-          aws ecs create-service \
-            --cluster $CLUSTER_NAME \
-            --service-name $SERVICE_NAME \
-            --task-definition $TASK_DEFINITION_NAME \
-            --desired-count 1 \
-            --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
-            --region us-east-1
-        else
-          echo "Service $SERVICE_NAME already exists. Updating service..."
-          aws ecs update-service \
-            --cluster $CLUSTER_NAME \
-            --service $SERVICE_NAME \
-            --task-definition $TASK_DEFINITION_NAME \
-            --desired-count 1 \
-            --region us-east-1
-        fi
-
-      # Upload logs to S3
-      - name: Upload logs to S3
-        run: |
-          LOG_DIR="log"
-          if [ -d "$LOG_DIR" ]; then
-            TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            aws s3 cp $LOG_DIR/ s3://my-robot-results-bucket/$TIMESTAMP/ --recursive --region us-east-1
-          else
-            echo "Log directory does not exist. Skipping upload."
-          fi
+          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+          aws s3 cp log/ s3://$BUCKET_NAME/logs/$TIMESTAMP/ --recursive --region us-east-1
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
