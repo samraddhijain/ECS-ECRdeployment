@@ -65,6 +65,17 @@ jobs:
           echo "Contents of image-uris.txt:"
           cat image-uris.txt
 
+      # Run Robot Framework Tests
+      - name: Run Robot Framework Tests
+        run: |
+          docker run --rm \
+            -v $PWD:/robot \
+            ${{ steps.build-and-push.outputs.image_uri }}
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
       # Install AWS CLI
       - name: Install AWS CLI
         run: |
@@ -82,22 +93,13 @@ jobs:
           else
             echo "Bucket already exists. Skipping creation."
           fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
 
       # Create Log Group
       - name: Create Log Group
         run: |
           aws logs create-log-group --log-group-name /ecs/si-task || true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
 
-
-       # Get Default VPC ID
+      # Get Default VPC ID
       - name: Get Default VPC ID
         id: default-vpc
         run: |
@@ -106,9 +108,20 @@ jobs:
           echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
           
       - name: Create Security Group
-        id: create_security_group
+        id: create-security-group
         run: |
-          SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name my-security-group --description "My security group" --vpc-id $VPC_ID --query 'GroupId' --output text)
+          SECURITY_GROUP_NAME="my-security-group"
+          VPC_ID="${{ env.VPC_ID }}"
+          
+          SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SECURITY_GROUP_NAME" "Name=vpc-id,Values=$VPC_ID" --query 'SecurityGroups[0].GroupId' --output text)
+
+          if [ "$SECURITY_GROUP_ID" == "None" ]; then
+            echo "Creating security group $SECURITY_GROUP_NAME..."
+            SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name $SECURITY_GROUP_NAME --description "My security group" --vpc-id $VPC_ID --query 'GroupId' --output text)
+          else
+            echo "Security group $SECURITY_GROUP_NAME already exists with ID $SECURITY_GROUP_ID."
+          fi
+          
           echo "SECURITY_GROUP_ID=$SECURITY_GROUP_ID" >> $GITHUB_ENV
 
       - name: Get Default Subnets
@@ -121,23 +134,10 @@ jobs:
           echo "Default Subnets: $FORMATTED_SUBNETS"
           echo "SUBNETS=$FORMATTED_SUBNETS" >> $GITHUB_ENV
 
-      # Get Default Security Group
-      - name: Get Default Security Group
-        id: default-security-group
-        run: |
-          VPC_ID="${{ env.VPC_ID }}"
-          SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=default" --query "SecurityGroups[0].GroupId" --output text)
-          echo "Default Security Group ID: $SECURITY_GROUP_ID"
-          echo "SECURITY_GROUP_ID=$SECURITY_GROUP_ID" >> $GITHUB_ENV
-
       # Create ECS Cluster
       - name: Create ECS Cluster
         run: |
           aws ecs create-cluster --cluster-name si-cluster --region us-east-1 || true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
 
       # Register ECS Task Definition
       - name: Register ECS Task Definition
@@ -210,27 +210,14 @@ jobs:
 
           echo "$TASK_DEF_JSON" > task-definition.json
           aws ecs register-task-definition --cli-input-json file://task-definition.json
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
-      - name: Create Subnet
-        id: create_subnet
-        run: |
-          SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.1.0/24 --availability-zone us-east-1a --query 'Subnet.SubnetId' --output text)
-          echo "SUBNET_ID=$SUBNET_ID" >> $GITHUB_ENV
-
-      - name: List Existing Services (Debugging)
-        run: |
-          echo "Listing all services in cluster $CLUSTER_NAME..."
-          aws ecs list-services --cluster $CLUSTER_NAME --region us-east-1
 
       - name: Deploy ECS Service
         run: |
-          CLUSTER_NAME="SI-cluster"
+          CLUSTER_NAME="si-cluster"
           SERVICE_NAME="si-service"
           TASK_DEFINITION_NAME="SI-task"
+          SUBNETS="${{ env.SUBNETS }}"
+          SECURITY_GROUP_ID="${{ env.SECURITY_GROUP_ID }}"
 
           # Check if the service exists
           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].serviceName' --output text 2>/dev/null || echo "MISSING")
@@ -243,46 +230,34 @@ jobs:
               --task-definition $TASK_DEFINITION_NAME \
               --desired-count 1 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
-              --region us-east-1
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}"
           else
             echo "Service $SERVICE_NAME already exists. Updating service..."
             aws ecs update-service \
               --cluster $CLUSTER_NAME \
               --service $SERVICE_NAME \
-              --task-definition $TASK_DEFINITION_NAME \
-              --desired-count 1 \
-              --region us-east-1
+              --task-definition $TASK_DEFINITION_NAME
           fi
 
-      - name: Output Security Group and Subnet IDs
-        run: |
-          echo "Security Group ID: ${{ env.SECURITY_GROUP_ID }}"
-          echo "Subnet ID: ${{ env.SUBNET_ID }}"
-
-      - name: Output Security Group and Subnet IDs
-        run: |
-          echo "Security Group ID: ${{ env.SECURITY_GROUP_ID }}"
-          echo "Subnet ID: ${{ env.SUBNET_ID }}"
-            
-      # Run Robot Framework tests (assuming Robot Framework setup is available)
+      # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
           docker run --rm \
             -v $PWD:/robot \
             ${{ steps.build-and-push.outputs.IMAGE_URI }}
-          env:
+        env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # Upload Logs to S3
-      - name: Upload Logs to S3
+      # Push the Robot Framework logs to S3 with a timestamp
+      - name: Upload Robot Framework Logs to S3
         run: |
-          BUCKET_NAME="my-robot-results-bucket"
-          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-          aws s3 cp log/ s3://$BUCKET_NAME/logs/$TIMESTAMP/ --recursive --region us-east-1
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+          LOG_DIR="log"
+          if [ -d "$LOG_DIR" ]; then
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            aws s3 cp "$LOG_DIR" "s3://my-robot-results-bucket/$TIMESTAMP/" --recursive
+            echo "Logs uploaded to S3 with timestamp: $TIMESTAMP"
+          else
+            echo "Log directory does not exist. Skipping upload."
+          fi
