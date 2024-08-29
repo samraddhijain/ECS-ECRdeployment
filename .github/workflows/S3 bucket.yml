@@ -219,24 +219,13 @@ jobs:
        # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
-          IMAGE_URI="${{ steps.build-and-push.outputs.image_uri }}"
-          if [ -z "$IMAGE_URI" ]; then
-            echo "Error: IMAGE_URI is not set or is empty."
-            exit 1
-          fi
-
-          echo "Running Robot Framework Tests with image $IMAGE_URI"
-          
           docker run --rm \
             -v $PWD:/robot \
-            -w /robot \
-            "$IMAGE_URI" \
-            robot --outputdir /robot/results /robot/tests
+            ${{ steps.build-and-push.outputs.IMAGE_URI }}
         env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
 
       # Retrieve Log HTML from CloudWatch
       - name: Retrieve Log HTML from CloudWatch
