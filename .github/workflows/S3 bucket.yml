@@ -104,6 +104,12 @@ jobs:
           VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text)
           echo "Default VPC ID: $VPC_ID"
           echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
+          
+      - name: Create Security Group
+        id: create_security_group
+        run: |
+          SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name my-security-group --description "My security group" --vpc-id $VPC_ID --query 'GroupId' --output text)
+          echo "SECURITY_GROUP_ID=$SECURITY_GROUP_ID" >> $GITHUB_ENV
 
       - name: Get Default Subnets
         id: default-subnets
@@ -209,38 +215,39 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      - name: Create or Update ECS Service
+      - name: Deploy ECS Service
         run: |
-          CLUSTER_NAME=si-cluster
-          SERVICE_NAME=si-service
-          TASK_DEFINITION_NAME=si-task
-      
-           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-  
-            if [ "$SERVICE_EXISTS" == "MISSING" ]; then
-              # Create the service if it doesn't exist
-              aws ecs create-service \
-                --cluster $CLUSTER_NAME \
-                --service-name $SERVICE_NAME \
-                --task-definition $TASK_DEFINITION_NAME \
-                --desired-count 1 \
-                --launch-type FARGATE \
+          CLUSTER_NAME="SI-cluster"
+          SERVICE_NAME="si-service"
+          TASK_DEFINITION_NAME="SI-task"
 
-                --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNETS }}],securityGroups=[${{ env.SECURITY_GROUP_ID }}],assignPublicIp=ENABLED}" \
-                --region us-east-1
-            else
-              echo "Service $SERVICE_NAME already exists. Updating service..."
-              aws ecs update-service \
-                --cluster $CLUSTER_NAME \
-                --service $SERVICE_NAME \
-                --task-definition $TASK_DEFINITION_NAME \
-                --desired-count 1 \
-                --region us-east-1
-            fi
-          env:
-            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            AWS_DEFAULT_REGION: us-east-1
+          # Check if the service exists
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text 2>/dev/null || echo "MISSING")
+
+          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+            echo "Service $SERVICE_NAME does not exist. Creating service..."
+            aws ecs create-service \
+              --cluster $CLUSTER_NAME \
+              --service-name $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
+              --region us-east-1
+          else
+            echo "Service $SERVICE_NAME already exists. Updating service..."
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --region us-east-1
+          fi
+
+      - name: Output Security Group and Subnet IDs
+        run: |
+          echo "Security Group ID: ${{ env.SECURITY_GROUP_ID }}"
+          echo "Subnet ID: ${{ env.SUBNET_ID }}"
             
       # Run Robot Framework tests (assuming Robot Framework setup is available)
       - name: Run Robot Framework Tests
