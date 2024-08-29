@@ -84,7 +84,13 @@ jobs:
 
       - name: Create S3 Bucket for Robot Framework Results
         run: |
-          aws s3api create-bucket --bucket my-robot-results-bucket --region us-east-1
+          BUCKET_NAME="my-robot-results-bucket"
+          if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
+            echo "Bucket does not exist. Creating bucket..."
+            aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1
+          else
+            echo "Bucket already exists. Skipping creation."
+          fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
