@@ -106,19 +106,18 @@ jobs:
             # Your task definition registration logic goes here
           fi
 
-      # Create or Update ECS Service
       - name: Create or Update ECS Service
         run: |
           CLUSTER_NAME="SI-cluster"
           SERVICE_NAME="SI-service"
           TASK_DEFINITION_NAME="SI-task"
-
+      
           # Check if the service already exists
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-
-          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
-            # Create the service if it doesn't exist
-            aws ecs create-service \
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].serviceName' --output text --region us-east-1 2>/dev/null)
+      
+          if [ "$SERVICE_EXISTS" == "$SERVICE_NAME" ]; then
+            echo "Service $SERVICE_NAME already exists. Updating service..."
+            aws ecs update-service \
               --cluster $CLUSTER_NAME \
               --service $SERVICE_NAME \
               --task-definition $TASK_DEFINITION_NAME \
@@ -132,9 +131,13 @@ jobs:
               --task-definition $TASK_DEFINITION_NAME \
               --desired-count 1 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-0123456789abcdef0, subnet-0123456789abcdef1],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
               --region us-east-1
           fi
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       # Run Robot Framework Tests
       - name: Run Robot Framework Tests
