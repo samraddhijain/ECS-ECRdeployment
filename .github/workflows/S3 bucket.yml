@@ -122,43 +122,43 @@ jobs:
       aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1
     fi
 
-- name: Register ECS Task Definition
-  run: |
-    TASK_DEFINITION_NAME="SI-task"
-    if aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region us-east-1 2>/dev/null; then
-      echo "Task Definition $TASK_DEFINITION_NAME already exists. Skipping registration."
-    else
-      echo "Registering ECS Task Definition $TASK_DEFINITION_NAME..."
-      # Your task definition registration logic goes here
-    fi
+    - name: Register ECS Task Definition
+      run: |
+        TASK_DEFINITION_NAME="SI-task"
+        if aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region us-east-1 2>/dev/null; then
+          echo "Task Definition $TASK_DEFINITION_NAME already exists. Skipping registration."
+        else
+          echo "Registering ECS Task Definition $TASK_DEFINITION_NAME..."
+          # Your task definition registration logic goes here
+        fi
 
-- name: Check and Create ECS Service
-  run: |
-    CLUSTER_NAME="SI-cluster"
-    SERVICE_NAME="SI-service"
-    TASK_DEFINITION_NAME="SI-task"
-
-    SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-
-    if [ "$SERVICE_EXISTS" == "MISSING" ]; then
-      echo "Service $SERVICE_NAME does not exist. Creating service..."
-      aws ecs create-service \
-        --cluster $CLUSTER_NAME \
-        --service-name $SERVICE_NAME \
-        --task-definition $TASK_DEFINITION_NAME \
-        --desired-count 1 \
-        --launch-type FARGATE \
-        --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
-        --region us-east-1
-    else
-      echo "Service $SERVICE_NAME already exists. Updating service..."
-      aws ecs update-service \
-        --cluster $CLUSTER_NAME \
-        --service $SERVICE_NAME \
-        --task-definition $TASK_DEFINITION_NAME \
-        --desired-count 1 \
-        --region us-east-1
-    fi
+    - name: Check and Create ECS Service
+      run: |
+        CLUSTER_NAME="SI-cluster"
+        SERVICE_NAME="SI-service"
+        TASK_DEFINITION_NAME="SI-task"
+    
+        SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
+    
+        if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+          echo "Service $SERVICE_NAME does not exist. Creating service..."
+          aws ecs create-service \
+            --cluster $CLUSTER_NAME \
+            --service-name $SERVICE_NAME \
+            --task-definition $TASK_DEFINITION_NAME \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+            --region us-east-1
+        else
+          echo "Service $SERVICE_NAME already exists. Updating service..."
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --task-definition $TASK_DEFINITION_NAME \
+            --desired-count 1 \
+            --region us-east-1
+        fi
 
       # Upload logs to S3
       - name: Upload logs to S3
