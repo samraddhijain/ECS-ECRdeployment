@@ -72,65 +72,47 @@ jobs:
           sudo apt-get install -y awscli
           aws --version
 
-      # Create VPC (if needed, otherwise use existing VPC ID)
-      - name: Create or Use Existing VPC
-        id: vpc
+       # Get Default VPC ID
+      - name: Get Default VPC ID
+        id: default-vpc
         run: |
-          VPC_ID=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text)
+          echo "Default VPC ID: $VPC_ID"
           echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
 
-      # Create Subnets
-      - name: Create Subnets
-        id: subnets
+      # Get Default Subnets
+      - name: Get Default Subnets
+        id: default-subnets
         run: |
           VPC_ID="${{ env.VPC_ID }}"
-          AZ1="us-east-1a"  # Replace with the desired availability zone
-          AZ2="us-east-1b"  # Replace with the desired availability zone
-          CIDR1="10.0.1.0/24"  # Replace with your desired CIDR block
-          CIDR2="10.0.2.0/24"  # Replace with your desired CIDR block
+          SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[*].SubnetId" --output text)
+          echo "Default Subnets: $SUBNETS"
+          echo "SUBNETS=$SUBNETS" >> $GITHUB_ENV
 
-          SUBNET1_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $CIDR1 --availability-zone $AZ1 --query 'Subnet.SubnetId' --output text)
-          SUBNET2_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $CIDR2 --availability-zone $AZ2 --query 'Subnet.SubnetId' --output text)
-
-          echo "Created Subnets:"
-          echo "Subnet 1 ID: $SUBNET1_ID"
-          echo "Subnet 2 ID: $SUBNET2_ID"
-          echo "SUBNETS=$SUBNET1_ID,$SUBNET2_ID" >> $GITHUB_ENV
-
-      # Create Security Group
-      - name: Create Security Group
-        id: security-group
+      # Get Default Security Group
+      - name: Get Default Security Group
+        id: default-security-group
         run: |
           VPC_ID="${{ env.VPC_ID }}"
-          SECURITY_GROUP_NAME="SI-security-group"
-          DESCRIPTION="Security group for SI-service"
-
-          SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name $SECURITY_GROUP_NAME --description "$DESCRIPTION" --vpc-id $VPC_ID --query 'GroupId' --output text)
-          echo "Created Security Group ID: $SECURITY_GROUP_ID"
-
-          # Add inbound rules to the security group (example: allow HTTP traffic)
-          aws ec2 authorize-security-group-ingress --group-id $SECURITY_GROUP_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
-
+          SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=default" --query "SecurityGroups[0].GroupId" --output text)
+          echo "Default Security Group ID: $SECURITY_GROUP_ID"
           echo "SECURITY_GROUP_ID=$SECURITY_GROUP_ID" >> $GITHUB_ENV
 
-      # Create or Update ECS Cluster
+      # Create ECS Cluster
       - name: Create ECS Cluster
         run: |
-          CLUSTER_NAME="SI-cluster"
-          aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1 || echo "Cluster $CLUSTER_NAME already exists."
+          aws ecs create-cluster --cluster-name my-cluster --region us-east-1 || true
         env:
-          AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
       # Register ECS Task Definition
       - name: Register ECS Task Definition
         id: register-task-def
         run: |
-          CLUSTER_NAME="SI-cluster"
-          TASK_DEFINITION_NAME="SI-task"
-          SUBNETS="${{ env.SUBNETS }}"
-          SECURITY_GROUPS="${{ env.SECURITY_GROUP_ID }}"
+          CLUSTER_NAME=my-cluster
+          TASK_DEFINITION_NAME=my-task
 
           DOCKERFILES=$(find . -name 'Dockerfile*')
           CONTAINERS_JSON=""
@@ -197,11 +179,10 @@ jobs:
           echo "$TASK_DEF_JSON" > task-definition.json
           aws ecs register-task-definition --cli-input-json file://task-definition.json
         env:
-          AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
-      # Create or Update ECS Service
       - name: Create or Update ECS Service
         run: |
           CLUSTER_NAME="SI-cluster"
