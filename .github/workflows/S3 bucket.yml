@@ -215,6 +215,17 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
+      - name: Create Subnet
+        id: create_subnet
+        run: |
+          SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.1.0/24 --availability-zone us-east-1a --query 'Subnet.SubnetId' --output text)
+          echo "SUBNET_ID=$SUBNET_ID" >> $GITHUB_ENV
+
+      - name: List Existing Services (Debugging)
+        run: |
+          echo "Listing all services in cluster $CLUSTER_NAME..."
+          aws ecs list-services --cluster $CLUSTER_NAME --region us-east-1
+
       - name: Deploy ECS Service
         run: |
           CLUSTER_NAME="SI-cluster"
@@ -222,7 +233,7 @@ jobs:
           TASK_DEFINITION_NAME="SI-task"
 
           # Check if the service exists
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text 2>/dev/null || echo "MISSING")
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].serviceName' --output text 2>/dev/null || echo "MISSING")
 
           if [ "$SERVICE_EXISTS" == "MISSING" ]; then
             echo "Service $SERVICE_NAME does not exist. Creating service..."
@@ -243,6 +254,11 @@ jobs:
               --desired-count 1 \
               --region us-east-1
           fi
+
+      - name: Output Security Group and Subnet IDs
+        run: |
+          echo "Security Group ID: ${{ env.SECURITY_GROUP_ID }}"
+          echo "Subnet ID: ${{ env.SUBNET_ID }}"
 
       - name: Output Security Group and Subnet IDs
         run: |
