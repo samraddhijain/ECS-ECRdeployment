@@ -103,6 +103,14 @@
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
+       - name: Run Robot Framework Tests
+         run: |
+          docker run --rm \
+          -v $PWD:/robot \
+          -w /robot \
+          <your_docker_image> \
+          robot --i FixturesandResults --outputdir /robot/log /robot/Web/RR/TestCases
+
        - name: Create ECS Cluster
          run: |
            aws ecs create-cluster --cluster-name my-cluster --region us-east-1 || true
@@ -226,3 +234,30 @@
        #    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
        #    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
        #    AWS_DEFAULT_REGION: us-east-1
+       - name: Poll for Log Generation
+         run: |
+          LOG_FILE="/robot/log/output.xml"
+          TIMEOUT=600  # Timeout in seconds (e.g., 10 minutes)
+          SLEEP_INTERVAL=10  # Interval between checks in seconds
+          ELAPSED_TIME=0
+
+          while [ ! -f "$LOG_FILE" ] && [ $ELAPSED_TIME -lt $TIMEOUT ]; do
+            echo "Waiting for log file to be generated..."
+            sleep $SLEEP_INTERVAL
+            ELAPSED_TIME=$((ELAPSED_TIME + SLEEP_INTERVAL))
+          done
+
+          if [ -f "$LOG_FILE" ]; then
+            echo "Log file generated successfully."
+          else
+            echo "Timeout reached. Log file not found."
+            exit 1
+          fi
+
+       - name: Upload Robot Framework results to S3
+         run: |
+          aws s3 cp /robot/log/output.xml s3://my-robot-results-bucket/robot-results/output.xml --region us-east-1
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
