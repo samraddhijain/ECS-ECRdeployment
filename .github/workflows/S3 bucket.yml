@@ -114,11 +114,11 @@ jobs:
           TASK_DEFINITION_NAME="SI-task"
 
           # Check if the service already exists
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].serviceName' --output text --region us-east-1 2>/dev/null)
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
 
-          if [ "$SERVICE_EXISTS" == "$SERVICE_NAME" ]; then
-            echo "Service $SERVICE_NAME already exists. Updating service..."
-            aws ecs update-service \
+          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+            # Create the service if it doesn't exist
+            aws ecs create-service \
               --cluster $CLUSTER_NAME \
               --service $SERVICE_NAME \
               --task-definition $TASK_DEFINITION_NAME \
