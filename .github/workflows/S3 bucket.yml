@@ -111,8 +111,8 @@ jobs:
           CLUSTER_NAME="SI-cluster"
           SERVICE_NAME="SI-service"
           TASK_DEFINITION_NAME="SI-task"
-          SUBNETS="subnet-0123456789abcdef0,subnet-0123456789abcdef1"
-          SECURITY_GROUPS="sg-0123456789abcdef0"
+          SUBNETS="subnet-0123456789abcdef0,subnet-0123456789abcdef1"  # Replace with valid subnet IDs
+          SECURITY_GROUPS="sg-0123456789abcdef0"  # Replace with a valid security group ID
       
           # Check if the service already exists
           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].serviceName' --output text --region us-east-1 2>/dev/null || echo "MISSING")
@@ -140,7 +140,6 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
 
       # Run Robot Framework Tests
       - name: Run Robot Framework Tests
