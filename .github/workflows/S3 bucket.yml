@@ -26,21 +26,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
-      # Create ECR Repository
-      - name: Create ECR Repository
-        run: |
-          REPO_NAME="demo"
-          if aws ecr describe-repositories --repository-names $REPO_NAME --region us-east-1 > /dev/null 2>&1; then
-            echo "ECR Repository $REPO_NAME already exists."
-          else
-            echo "Creating ECR Repository $REPO_NAME..."
-            aws ecr create-repository --repository-name $REPO_NAME --region us-east-1
-          fi
 
       # Build, Tag, and Push Images to Amazon ECR
       - name: Build, Tag, and Push Images to Amazon ECR
@@ -84,39 +72,147 @@ jobs:
           sudo apt-get install -y awscli
           aws --version
 
-      # Create or Verify ECS Cluster
-      - name: Create or Verify ECS Cluster
+      # Create VPC (if needed, otherwise use existing VPC ID)
+      - name: Create or Use Existing VPC
+        id: vpc
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+          echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
+
+      # Create Subnets
+      - name: Create Subnets
+        id: subnets
+        run: |
+          VPC_ID="${{ env.VPC_ID }}"
+          AZ1="us-east-1a"  # Replace with the desired availability zone
+          AZ2="us-east-1b"  # Replace with the desired availability zone
+          CIDR1="10.0.1.0/24"  # Replace with your desired CIDR block
+          CIDR2="10.0.2.0/24"  # Replace with your desired CIDR block
+
+          SUBNET1_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $CIDR1 --availability-zone $AZ1 --query 'Subnet.SubnetId' --output text)
+          SUBNET2_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $CIDR2 --availability-zone $AZ2 --query 'Subnet.SubnetId' --output text)
+
+          echo "Created Subnets:"
+          echo "Subnet 1 ID: $SUBNET1_ID"
+          echo "Subnet 2 ID: $SUBNET2_ID"
+          echo "SUBNETS=$SUBNET1_ID,$SUBNET2_ID" >> $GITHUB_ENV
+
+      # Create Security Group
+      - name: Create Security Group
+        id: security-group
+        run: |
+          VPC_ID="${{ env.VPC_ID }}"
+          SECURITY_GROUP_NAME="SI-security-group"
+          DESCRIPTION="Security group for SI-service"
+
+          SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name $SECURITY_GROUP_NAME --description "$DESCRIPTION" --vpc-id $VPC_ID --query 'GroupId' --output text)
+          echo "Created Security Group ID: $SECURITY_GROUP_ID"
+
+          # Add inbound rules to the security group (example: allow HTTP traffic)
+          aws ec2 authorize-security-group-ingress --group-id $SECURITY_GROUP_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
+
+          echo "SECURITY_GROUP_ID=$SECURITY_GROUP_ID" >> $GITHUB_ENV
+
+      # Create or Update ECS Cluster
+      - name: Create ECS Cluster
         run: |
           CLUSTER_NAME="SI-cluster"
-          if aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].status' --output text --region us-east-1 2>/dev/null | grep -q "ACTIVE"; then
-            echo "ECS Cluster $CLUSTER_NAME already exists."
-          else
-            echo "Creating ECS Cluster $CLUSTER_NAME..."
-            aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1
-          fi
+          aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1 || echo "Cluster $CLUSTER_NAME already exists."
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       # Register ECS Task Definition
       - name: Register ECS Task Definition
+        id: register-task-def
         run: |
+          CLUSTER_NAME="SI-cluster"
           TASK_DEFINITION_NAME="SI-task"
-          if aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region us-east-1 2>/dev/null; then
-            echo "Task Definition $TASK_DEFINITION_NAME already exists. Skipping registration."
-          else
-            echo "Registering ECS Task Definition $TASK_DEFINITION_NAME..."
-            # Your task definition registration logic goes here
-          fi
+          SUBNETS="${{ env.SUBNETS }}"
+          SECURITY_GROUPS="${{ env.SECURITY_GROUP_ID }}"
 
+          DOCKERFILES=$(find . -name 'Dockerfile*')
+          CONTAINERS_JSON=""
+          PORT=8080  # Starting port for containerPort and hostPort
+          CONTAINER_CPU=256  # CPU units for each container
+          CONTAINER_MEMORY=512  # Memory for each container
+          TOTAL_CPU=0
+          TOTAL_MEMORY=0
+
+          echo "Reading image URIs from image-uris.txt..."
+          cat image-uris.txt
+
+          # Read image URIs from the file
+          while IFS=: read -r TAG IMAGE_URI; do
+            CONTAINER_NAME="${TAG}-container"
+
+            TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
+            TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
+
+            if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
+              CONTAINERS_JSON+="{
+                \"name\": \"$CONTAINER_NAME\",
+                \"image\": \"$IMAGE_URI\",
+                \"essential\": true,
+                \"memory\": $CONTAINER_MEMORY,
+                \"cpu\": $CONTAINER_CPU,
+                \"portMappings\": [
+                  {
+                    \"containerPort\": $PORT,
+                    \"hostPort\": $PORT
+                  }
+                ],
+                \"logConfiguration\": {
+                  \"logDriver\": \"awslogs\",
+                  \"options\": {
+                    \"awslogs-group\": \"/ecs/$TASK_DEFINITION_NAME\",
+                    \"awslogs-region\": \"us-east-1\",
+                    \"awslogs-stream-prefix\": \"$CONTAINER_NAME\"
+                  }
+                }
+              },"
+
+              PORT=$((PORT + 1))  # Increment port for next container
+            else
+              echo "Skipping container $CONTAINER_NAME due to resource limits."
+            fi
+          done < image-uris.txt
+
+          # Remove the trailing comma
+          CONTAINERS_JSON=${CONTAINERS_JSON%,}
+
+          TASK_DEF_JSON="{
+            \"family\": \"$TASK_DEFINITION_NAME\",
+            \"networkMode\": \"awsvpc\",
+            \"containerDefinitions\": [
+              $CONTAINERS_JSON
+            ],
+            \"requiresCompatibilities\": [\"FARGATE\"],
+            \"cpu\": \"1024\",
+            \"memory\": \"2048\",
+            \"executionRoleArn\": \"arn:aws:iam::533267409793:role/ecsTaskExecutionRole\"
+          }"
+
+          echo "$TASK_DEF_JSON" > task-definition.json
+          aws ecs register-task-definition --cli-input-json file://task-definition.json
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # Create or Update ECS Service
       - name: Create or Update ECS Service
         run: |
           CLUSTER_NAME="SI-cluster"
           SERVICE_NAME="SI-service"
           TASK_DEFINITION_NAME="SI-task"
-          SUBNETS="subnet-0123456789abcdef0,subnet-0123456789abcdef1"  # Replace with valid subnet IDs
-          SECURITY_GROUPS="sg-0123456789abcdef0"  # Replace with a valid security group ID
-      
+          SUBNETS="${{ env.SUBNETS }}"
+          SECURITY_GROUPS="${{ env.SECURITY_GROUP_ID }}"
+
           # Check if the service already exists
           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].serviceName' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-      
+
           if [ "$SERVICE_EXISTS" == "$SERVICE_NAME" ]; then
             echo "Service $SERVICE_NAME already exists. Updating service..."
             aws ecs update-service \
@@ -141,13 +237,13 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # Run Robot Framework Tests
+      # Run Robot Framework tests (assuming Robot Framework setup is available)
       - name: Run Robot Framework Tests
         run: |
           docker run --rm \
             -v $PWD:/robot \
             ${{ steps.build-and-push.outputs.IMAGE_URI }}
-        env:
+          env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
