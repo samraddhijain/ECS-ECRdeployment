@@ -32,7 +32,7 @@ jobs:
       # Check and Create ECR Repository
       - name: Check and Create ECR Repository
         run: |
-          REPO_NAME="SIrepo"
+          REPO_NAME="si_repo"
           if aws ecr describe-repositories --repository-names $REPO_NAME --region us-east-1 2>/dev/null; then
             echo "ECR Repository $REPO_NAME already exists."
           else
