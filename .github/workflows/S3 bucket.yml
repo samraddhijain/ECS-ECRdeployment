@@ -90,18 +90,21 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
+      # Step to run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
           docker run --rm \
           -v $PWD:/robot \
           -w /robot \
           ${{ steps.build-and-push.outputs.IMAGE_URI }} \
-          robot --i FixturesandResults --outputdir /robot/log /robot/Web/RR/TestCases
-
-      - name: Upload Robot Framework Logs to S3
+          robot --i FixturesandResults --outputdir /robot/log
+      
+      # Step to check log directory and upload logs to S3
+      - name: Check and Upload Robot Framework results to S3
         run: |
           LOG_DIR="/robot/log"
           if [ -d "$LOG_DIR" ]; then
+            echo "Log directory exists. Uploading logs to S3..."
             aws s3 cp $LOG_DIR s3://my-robot-results-bucket/ --recursive
           else
             echo "Log directory does not exist!"
