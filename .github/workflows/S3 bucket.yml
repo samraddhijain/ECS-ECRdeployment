@@ -90,13 +90,19 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
+      # - name: Run Robot Framework Tests
+      #   run: |
+      #     docker run --rm \
+      #     -v $PWD:/robot \
+      #     -w /robot \
+      #     ${{ steps.build-and-push.outputs.IMAGE_URI }} \
+      #     robot --outputdir /robot/log /robot/Web/RR/TestCases
       - name: Run Robot Framework Tests
         run: |
           docker run --rm \
           -v $PWD:/robot \
           -w /robot \
-          ${{ steps.build-and-push.outputs.IMAGE_URI }} \
-          robot --outputdir /robot/log /robot/Web/RR/TestCases
+          ${{ steps.build-and-push.outputs.IMAGE_URI }}
 
       
       # Step to check log directory and upload logs to S3
