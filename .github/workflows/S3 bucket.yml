@@ -1,53 +1,29 @@
-name: Build, Push Docker Images, and Deploy to ECS
+name: Build and Deploy to ECS
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 jobs:
-  build_and_deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Ensure all tags are fetched
+      # Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-      - name: Install dos2unix
-        run: sudo apt-get install -y dos2unix
+      # Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-      - name: Convert line endings
-        run: dos2unix ./build/git_update.sh
-
-      - name: List build directory contents
-        run: ls -alh build
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Login to Amazon ECR
+      # Log in to Amazon ECR
+      - name: Log in to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Automatic Tagging of Releases
-        id: increment-git-tag
-        run: |
-          chmod +x ./build/git_update.sh
-          ./build/git_update.sh -v major
-
-      - name: Debug Dockerfile Paths
-        run: |
-          DOCKERFILES=$(find . -name 'Dockerfile*')
-          echo "Found Dockerfiles:"
-          echo "$DOCKERFILES"
-
+      # Build, Tag, and Push Images to Amazon ECR
       - name: Build, Tag, and Push Images to Amazon ECR
         id: build-and-push
         env:
@@ -70,10 +46,7 @@ jobs:
             
             echo "Building and pushing Docker image for $DOCKERFILE to $IMAGE_URI"
             
-            # Build the Docker image
             docker build -f $DOCKERFILE -t $IMAGE_URI .
-            
-            # Push the Docker image to ECR
             docker push $IMAGE_URI
             
             echo "IMAGE $IMAGE_URI is pushed to $ECR_REGISTRY/$ECR_REPOSITORY"
@@ -82,50 +55,20 @@ jobs:
             echo "$TAG:$IMAGE_URI" >> image-uris.txt
           done
 
+      # Verify Image URIs
       - name: Verify Image URIs
         run: |
           echo "Contents of image-uris.txt:"
           cat image-uris.txt
 
-      - name: Create ECS Cluster
+      # Install AWS CLI
+      - name: Install AWS CLI
         run: |
-          CLUSTER_NAME="my-ecs-cluster"
-          aws ecs create-cluster --cluster-name $CLUSTER_NAME || echo "Cluster already exists"
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+          sudo apt-get update
+          sudo apt-get install -y awscli
+          aws --version
 
-      - name: Register ECS Task Definition
-        run: |
-          TASK_DEFINITION_FILE="ecs-task-definition.json"
-          aws ecs register-task-definition --cli-input-json file://$TASK_DEFINITION_FILE
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
-      - name: Create or Update ECS Service
-        run: |
-          CLUSTER_NAME="my-ecs-cluster"
-          SERVICE_NAME="my-ecs-service"
-          TASK_DEFINITION_ARN=$(aws ecs describe-task-definition --task-definition "my-task-definition" --query "taskDefinition.taskDefinitionArn" --output text)
-          
-          # Check if the service exists
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query "services[0].serviceName" --output text)
-
-          if [ "$SERVICE_EXISTS" == "$SERVICE_NAME" ]; then
-            echo "Updating existing ECS service..."
-            aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --task-definition $TASK_DEFINITION_ARN --force-new-deployment
-          else
-            echo "Creating new ECS service..."
-            aws ecs create-service --cluster $CLUSTER_NAME --service-name $SERVICE_NAME --task-definition $TASK_DEFINITION_ARN --desired-count 1
-          fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
+      # Create S3 Bucket for Robot Framework Results
       - name: Create S3 Bucket for Robot Framework Results
         run: |
           BUCKET_NAME="my-robot-results-bucket"
@@ -140,6 +83,135 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
+      # Create Log Group
+      - name: Create Log Group
+        run: |
+          aws logs create-log-group --log-group-name /ecs/my-task || true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      # Create ECS Cluster
+      - name: Create ECS Cluster
+        run: |
+          aws ecs create-cluster --cluster-name my-cluster --region us-east-1 || true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      # Register ECS Task Definition
+      - name: Register ECS Task Definition
+        id: register-task-def
+        run: |
+          CLUSTER_NAME=my-cluster
+          TASK_DEFINITION_NAME=my-task
+
+          DOCKERFILES=$(find . -name 'Dockerfile*')
+          CONTAINERS_JSON=""
+          PORT=8080  # Starting port for containerPort and hostPort
+          CONTAINER_CPU=256  # CPU units for each container
+          CONTAINER_MEMORY=512  # Memory for each container
+          TOTAL_CPU=0
+          TOTAL_MEMORY=0
+
+          echo "Reading image URIs from image-uris.txt..."
+          cat image-uris.txt
+
+          # Read image URIs from the file
+          while IFS=: read -r TAG IMAGE_URI; do
+            CONTAINER_NAME="${TAG}-container"
+
+            TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
+            TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
+
+            if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
+              CONTAINERS_JSON+="{
+                \"name\": \"$CONTAINER_NAME\",
+                \"image\": \"$IMAGE_URI\",
+                \"essential\": true,
+                \"memory\": $CONTAINER_MEMORY,
+                \"cpu\": $CONTAINER_CPU,
+                \"portMappings\": [
+                  {
+                    \"containerPort\": $PORT,
+                    \"hostPort\": $PORT
+                  }
+                ],
+                \"logConfiguration\": {
+                  \"logDriver\": \"awslogs\",
+                  \"options\": {
+                    \"awslogs-group\": \"/ecs/$TASK_DEFINITION_NAME\",
+                    \"awslogs-region\": \"us-east-1\",
+                    \"awslogs-stream-prefix\": \"$CONTAINER_NAME\"
+                  }
+                }
+              },"
+
+              PORT=$((PORT + 1))  # Increment port for next container
+            else
+              echo "Skipping container $CONTAINER_NAME due to resource limits."
+            fi
+          done < image-uris.txt
+
+          # Remove the trailing comma
+          CONTAINERS_JSON=${CONTAINERS_JSON%,}
+
+          TASK_DEF_JSON="{
+            \"family\": \"$TASK_DEFINITION_NAME\",
+            \"networkMode\": \"awsvpc\",
+            \"containerDefinitions\": [
+              $CONTAINERS_JSON
+            ],
+            \"requiresCompatibilities\": [\"FARGATE\"],
+            \"cpu\": \"1024\",
+            \"memory\": \"2048\",
+            \"executionRoleArn\": \"arn:aws:iam::533267409793:role/ecsTaskExecutionRole\"
+          }"
+
+          echo "$TASK_DEF_JSON" > task-definition.json
+          aws ecs register-task-definition --cli-input-json file://task-definition.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      # Create or Update ECS Service
+      - name: Create or Update ECS Service
+        run: |
+          CLUSTER_NAME=my-cluster
+          SERVICE_NAME=my-service
+          TASK_DEFINITION_NAME=my-task
+
+          # Check if the service already exists
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
+
+          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+            # Create the service if it doesn't exist
+            aws ecs create-service \
+              --cluster $CLUSTER_NAME \
+              --service-name $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+              --region us-east-1
+          else
+            # Update the service if it exists
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --region us-east-1
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
           docker run --rm \
@@ -151,6 +223,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
+      # Retrieve Log HTML from CloudWatch
       - name: Retrieve Log HTML from CloudWatch
         run: |
           LOG_GROUP_NAME="/ecs/my-task"
@@ -159,23 +232,4 @@ jobs:
 
           if [ -n "$LOG_STREAM_NAME" ]; then
             echo "Retrieving logs from CloudWatch..."
-            aws logs get-log-events --log-group-name "$LOG_GROUP_NAME" --log-stream-name "$LOG_STREAM_NAME" --limit 1000 --query 'events[*].message' --output text > ecs-log.txt
-            # Extract the HTML report if it’s part of the log
-            grep -oP '.*\.html' ecs-log.txt > log.html
-            cat log.html
-          else
-            echo "No log stream found!"
-            exit 1
-          fi
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-      - name: Upload Robot Framework `log.html` to S3
-        run: |
-          aws s3 cp log.html s3://my-robot-results-bucket/robot-results/log.html --region us-east-1
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            aws logs get-log-events --log-group-name "$LOG_GROUP
