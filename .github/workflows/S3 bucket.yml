@@ -65,17 +65,6 @@ jobs:
           echo "Contents of image-uris.txt:"
           cat image-uris.txt
 
-      # Run Robot Framework Tests
-      - name: Run Robot Framework Tests
-        run: |
-          docker run --rm \
-            -v $PWD:/robot \
-            ${{ steps.build-and-push.outputs.image_uri }}
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
       # Install AWS CLI
       - name: Install AWS CLI
         run: |
@@ -215,7 +204,7 @@ jobs:
         run: |
           CLUSTER_NAME="si-cluster"
           SERVICE_NAME="si-service"
-          TASK_DEFINITION_NAME="SI-task"
+          TASK_DEFINITION_NAME="si-task"
           SUBNETS="${{ env.SUBNETS }}"
           SECURITY_GROUP_ID="${{ env.SECURITY_GROUP_ID }}"
 
@@ -236,9 +225,11 @@ jobs:
             aws ecs update-service \
               --cluster $CLUSTER_NAME \
               --service $SERVICE_NAME \
-              --task-definition $TASK_DEFINITION_NAME
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1
           fi
 
+          
       # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
