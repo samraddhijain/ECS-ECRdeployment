@@ -220,14 +220,10 @@ jobs:
 
       - name: Run Robot Framework Tests
         run: |
-          # Ensure IMAGE_URI is correctly set
-          echo "Running Robot Framework Tests with image ${{ steps.build-and-push.outputs.IMAGE_URI }}"
-
           docker run --rm \
-            -v $PWD:/robot \
-            -w /robot \
-            ${{ steps.build-and-push.outputs.IMAGE_URI }} \
-            robot --outputdir /robot/results /robot/tests
+          -v $PWD:/robot \
+          -w /robot \
+          ${{ steps.build-and-push.outputs.IMAGE_URI }}
         env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
