@@ -227,23 +227,11 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Retrieve Log HTML from CloudWatch
+      - name: Upload Logs to S3
         run: |
-          LOG_GROUP_NAME="/ecs/my-task"
-          LOG_STREAM_PREFIX="ecs"
-          LOG_STREAM_NAME=$(aws logs describe-log-streams --log-group-name "$LOG_GROUP_NAME" --log-stream-name-prefix "$LOG_STREAM_PREFIX" --query 'logStreams[0].logStreamName' --output text)
-      
-          if [ -n "$LOG_STREAM_NAME" ]; then
-            echo "Retrieving logs from CloudWatch..."
-            aws logs get-log-events --log-group-name "$LOG_GROUP_NAME" --log-stream-name "$LOG_STREAM_NAME" --limit 1000 --query 'events[*].message' --output text > ecs-log.txt
-            # Extract the HTML report if it’s part of the log
-            grep -oP '.*\.html' ecs-log.txt > log.html
-            cat log.html
-          else
-            echo "No log stream found!"
-            exit 1
-          fi
+          BUCKET_NAME="my-robot-results-bucket"
+          aws s3 cp log.html s3://$BUCKET_NAME/logs/ --region us-east-1
         env:
-          AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
