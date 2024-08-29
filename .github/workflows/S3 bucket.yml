@@ -31,6 +31,7 @@ jobs:
 
 
       # Build, Tag, and Push Images to Amazon ECR
+
       - name: Build, Tag, and Push Images to Amazon ECR
         id: build-and-push
         env:
@@ -38,16 +39,13 @@ jobs:
           ECR_REPOSITORY: demo
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Find all Dockerfiles in the repository
           DOCKERFILES=$(find . -name 'Dockerfile*')
-          > image-uris.txt  # Clear or create a file to store image URIs
+          > image-uris.txt
           
-          # Loop through the Dockerfiles and build/push images
           for DOCKERFILE in $DOCKERFILES; do
-            # Extract the name part for tagging
             BASENAME=$(basename $DOCKERFILE)
             TAG=${BASENAME//Dockerfile_/}
-            TAG=${TAG:-default}  # Fallback to 'default' if no specific tag
+            TAG=${TAG:-default}
             
             IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$TAG-$IMAGE_TAG"
             
@@ -56,11 +54,11 @@ jobs:
             docker build -f $DOCKERFILE -t $IMAGE_URI .
             docker push $IMAGE_URI
             
-            echo "IMAGE $IMAGE_URI is pushed to $ECR_REGISTRY/$ECR_REPOSITORY"
-            
-            # Save the image URI to a file
             echo "$TAG:$IMAGE_URI" >> image-uris.txt
           done
+
+          # Set IMAGE_URI output
+          echo "::set-output name=image_uri::$IMAGE_URI"
 
       # Verify Image URIs
       - name: Verify Image URIs
@@ -218,9 +216,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
+       # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
-          IMAGE_URI="${{ steps.build-and-push.outputs.IMAGE_URI }}"
+          IMAGE_URI="${{ steps.build-and-push.outputs.image_uri }}"
           if [ -z "$IMAGE_URI" ]; then
             echo "Error: IMAGE_URI is not set or is empty."
             exit 1
@@ -237,6 +236,7 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
 
       # Retrieve Log HTML from CloudWatch
       - name: Retrieve Log HTML from CloudWatch
