@@ -35,7 +35,7 @@ jobs:
         id: build-and-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: demo
+          ECR_REPOSITORY: si_repo
           IMAGE_TAG: ${{ github.sha }}
         run: |
           DOCKERFILES=$(find . -name 'Dockerfile*')
@@ -102,7 +102,7 @@ jobs:
       # Create ECS Cluster
       - name: Create ECS Cluster
         run: |
-          aws ecs create-cluster --cluster-name my-cluster --region us-east-1 || true
+          aws ecs create-cluster --cluster-name si-cluster --region us-east-1 || true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -112,8 +112,8 @@ jobs:
       - name: Register ECS Task Definition
         id: register-task-def
         run: |
-          CLUSTER_NAME=my-cluster
-          TASK_DEFINITION_NAME=my-task
+          CLUSTER_NAME=si-cluster
+          TASK_DEFINITION_NAME=si-task
 
           DOCKERFILES=$(find . -name 'Dockerfile*')
           CONTAINERS_JSON=""
@@ -186,9 +186,9 @@ jobs:
 
       - name: Create or Update ECS Service
         run: |
-          CLUSTER_NAME=my-cluster
-          SERVICE_NAME=my-service
-          TASK_DEFINITION_NAME=my-task
+          CLUSTER_NAME=si-cluster
+          SERVICE_NAME=si-service
+          TASK_DEFINITION_NAME=si-task
       
           # Check if the service already exists
           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
