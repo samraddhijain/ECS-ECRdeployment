@@ -112,137 +112,53 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # Create ECS Cluster
       - name: Check and Create ECS Cluster
-        run: |
-          CLUSTER_NAME="SI-cluster"
-          if aws ecs describe-clusters --clusters $CLUSTER_NAME --region us-east-1 --query 'clusters[0].status' --output text | grep -q "ACTIVE"; then
-            echo "ECS Cluster $CLUSTER_NAME already exists."
-          else
-            echo "Creating ECS Cluster $CLUSTER_NAME..."
-            aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1
-          fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+  run: |
+    CLUSTER_NAME="SI-cluster"
+    if aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].status' --output text --region us-east-1 2>/dev/null | grep -q "ACTIVE"; then
+      echo "Cluster $CLUSTER_NAME already exists."
+    else
+      echo "Creating ECS Cluster $CLUSTER_NAME..."
+      aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1
+    fi
 
-      # Register ECS Task Definition
-      - name: Register ECS Task Definition
-        id: register-task-def
-        run: |
-          CLUSTER_NAME=SI-cluster
-          TASK_DEFINITION_NAME=SI-task
+- name: Register ECS Task Definition
+  run: |
+    TASK_DEFINITION_NAME="SI-task"
+    if aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region us-east-1 2>/dev/null; then
+      echo "Task Definition $TASK_DEFINITION_NAME already exists. Skipping registration."
+    else
+      echo "Registering ECS Task Definition $TASK_DEFINITION_NAME..."
+      # Your task definition registration logic goes here
+    fi
 
-          DOCKERFILES=$(find . -name 'Dockerfile*')
-          CONTAINERS_JSON=""
-          PORT=8080  # Starting port for containerPort and hostPort
-          CONTAINER_CPU=256  # CPU units for each container
-          CONTAINER_MEMORY=512  # Memory for each container
-          TOTAL_CPU=0
-          TOTAL_MEMORY=0
+- name: Check and Create ECS Service
+  run: |
+    CLUSTER_NAME="SI-cluster"
+    SERVICE_NAME="SI-service"
+    TASK_DEFINITION_NAME="SI-task"
 
-          echo "Reading image URIs from image-uris.txt..."
-          cat image-uris.txt
+    SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
 
-          # Read image URIs from the file
-          while IFS=: read -r TAG IMAGE_URI; do
-            CONTAINER_NAME="${TAG}-container"
-
-            TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
-            TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
-
-            if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
-              CONTAINERS_JSON+="{
-                \"name\": \"$CONTAINER_NAME\",
-                \"image\": \"$IMAGE_URI\",
-                \"essential\": true,
-                \"memory\": $CONTAINER_MEMORY,
-                \"cpu\": $CONTAINER_CPU,
-                \"portMappings\": [
-                  {
-                    \"containerPort\": $PORT,
-                    \"hostPort\": $PORT
-                  }
-                ],
-                \"logConfiguration\": {
-                  \"logDriver\": \"awslogs\",
-                  \"options\": {
-                    \"awslogs-group\": \"/ecs/$TASK_DEFINITION_NAME\",
-                    \"awslogs-region\": \"us-east-1\",
-                    \"awslogs-stream-prefix\": \"$CONTAINER_NAME\"
-                  }
-                }
-              },"
-
-              PORT=$((PORT + 1))  # Increment port for next container
-            else
-              echo "Skipping container $CONTAINER_NAME due to resource limits."
-            fi
-          done < image-uris.txt
-
-          # Remove the trailing comma
-          CONTAINERS_JSON=${CONTAINERS_JSON%,}
-
-          TASK_DEF_JSON="{
-            \"family\": \"$TASK_DEFINITION_NAME\",
-            \"networkMode\": \"awsvpc\",
-            \"containerDefinitions\": [
-              $CONTAINERS_JSON
-            ],
-            \"requiresCompatibilities\": [\"FARGATE\"],
-            \"cpu\": \"1024\",
-            \"memory\": \"2048\",
-            \"executionRoleArn\": \"arn:aws:iam::533267409793:role/ecsTaskExecutionRole\"
-          }"
-
-          echo "$TASK_DEF_JSON" > task-definition.json
-
-          if aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region us-east-1 2>/dev/null; then
-            echo "Task definition $TASK_DEFINITION_NAME already exists. Registering a new revision..."
-          else
-            echo "Task definition $TASK_DEFINITION_NAME does not exist. Registering a new task definition..."
-          fi
-
-          aws ecs register-task-definition --cli-input-json file://task-definition.json
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
-      # Create or Update ECS Service
-      - name: Create or Update ECS Service
-        run: |
-          CLUSTER_NAME=SI-cluster
-          SERVICE_NAME=SI-service
-          TASK_DEFINITION_NAME=SI-task
-
-          # Check if the service already exists
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-
-          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
-            echo "Service $SERVICE_NAME does not exist. Creating service..."
-            aws ecs create-service \
-              --cluster $CLUSTER_NAME \
-              --service-name $SERVICE_NAME \
-              --task-definition $TASK_DEFINITION_NAME \
-              --desired-count 1 \
-              --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
-              --region us-east-1
-          else
-            echo "Service $SERVICE_NAME already exists. Updating service..."
-            aws ecs update-service \
-              --cluster $CLUSTER_NAME \
-              --service $SERVICE_NAME \
-              --task-definition $TASK_DEFINITION_NAME \
-              --desired-count 1 \
-              --region us-east-1
-          fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+    if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+      echo "Service $SERVICE_NAME does not exist. Creating service..."
+      aws ecs create-service \
+        --cluster $CLUSTER_NAME \
+        --service-name $SERVICE_NAME \
+        --task-definition $TASK_DEFINITION_NAME \
+        --desired-count 1 \
+        --launch-type FARGATE \
+        --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+        --region us-east-1
+    else
+      echo "Service $SERVICE_NAME already exists. Updating service..."
+      aws ecs update-service \
+        --cluster $CLUSTER_NAME \
+        --service $SERVICE_NAME \
+        --task-definition $TASK_DEFINITION_NAME \
+        --desired-count 1 \
+        --region us-east-1
+    fi
 
       # Upload logs to S3
       - name: Upload logs to S3
