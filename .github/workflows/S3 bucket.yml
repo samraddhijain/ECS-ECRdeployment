@@ -31,7 +31,6 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Create ECR Repository
       - name: Create ECR Repository
         run: |
           REPO_NAME=si
@@ -71,20 +70,22 @@ jobs:
             echo "$TAG:$IMAGE_URI" >> image-uris.txt
           done
       
-          # Set IMAGE_URI output
           echo "::set-output name=image_uri::$IMAGE_URI"
 
+      # Verify Image URIs
       - name: Verify Image URIs
         run: |
           echo "Contents of image-uris.txt:"
           cat image-uris.txt
 
+      # Install AWS CLI
       - name: Install AWS CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y awscli
           aws --version
 
+      # Create Default VPC, Subnets, Security Groups, and IAM Roles
       - name: Create Default VPC and Network Resources
         run: |
           VPC_ID=$(aws ec2 describe-vpcs --query "Vpcs[?IsDefault].VpcId" --output text)
@@ -170,69 +171,41 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      - name: Register ECS Task Definition
-        id: register-task-def
+      - name: Verify IAM Role for ECS Task Execution
+        id: verify-role
         run: |
-          CLUSTER_NAME=si-cluster
-          TASK_DEFINITION_NAME=si-task
-      
-          DOCKERFILES=$(find . -name 'Dockerfile*')
-          CONTAINERS_JSON=""
-          PORT=8080
-          CONTAINER_CPU=256
-          CONTAINER_MEMORY=512
-          TOTAL_CPU=0
-          TOTAL_MEMORY=0
-      
-          echo "Reading image URIs from image-uris.txt..."
-          cat image-uris.txt
-      
-          while IFS=: read -r TAG IMAGE_URI; do
-            CONTAINER_NAME="${TAG}-container"
-      
-            TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
-            TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
-      
-            CONTAINERS_JSON+="{\"name\": \"$CONTAINER_NAME\", \"image\": \"$IMAGE_URI\", \"memory\": $CONTAINER_MEMORY, \"cpu\": $CONTAINER_CPU, \"essential\": true, \"portMappings\": [{\"containerPort\": $PORT, \"hostPort\": $PORT}]},"
-          done < image-uris.txt
-      
-          CONTAINERS_JSON="[${CONTAINERS_JSON%,}]"
-      
-          echo "Registering task definition..."
-      
-          aws ecs register-task-definition --family $TASK_DEFINITION_NAME \
-            --container-definitions "$CONTAINERS_JSON" \
-            --requires-compatibilities "FARGATE" \
-            --cpu "$TOTAL_CPU" \
-            --memory "$TOTAL_MEMORY" \
-            --network-mode "awsvpc" \
-            --execution-role-arn "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
-      
-          TASK_DEFINITION_ARN=$(aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --query "taskDefinition.taskDefinitionArn" --output text)
-          echo "TASK_DEFINITION_ARN=$TASK_DEFINITION_ARN"
-      
-          echo "::set-output name=task_definition_arn::$TASK_DEFINITION_ARN"
+          ROLE_NAME=ecsTaskExecutionRole
+
+          # Check if IAM role exists
+          ROLE_EXISTS=$(aws iam get-role --role-name $ROLE_NAME --query "Role.Arn" --output text 2>/dev/null || echo "MISSING")
+
+          if [ "$ROLE_EXISTS" == "MISSING" ]; then
+            echo "Creating IAM role for ECS Task Execution..."
+            aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document '{"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "ecs-tasks.amazonaws.com"}, "Action": "sts:AssumeRole"}]}'
+            aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+          else
+            echo "IAM role for ECS Task Execution already exists."
+          fi
+
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      - name: Deploy ECS Service
+      - name: Register ECS Task Definition
         run: |
-          CLUSTER_NAME=si-cluster
-          SERVICE_NAME=si-service
-          TASK_DEFINITION_ARN=${{ steps.register-task-def.outputs.task_definition_arn }}
+          TASK_DEFINITION_NAME=your-task-definition
+          CONTAINERS_JSON='[{"name": "web", "image": "'$(cat image-uris.txt | awk '{print $2}' | head -n 1)'", "essential": true, "memory": 512, "cpu": 256, "logConfiguration": {"logDriver": "awslogs", "options": {"awslogs-group": "/ecs/my-task", "awslogs-region": "us-east-1", "awslogs-stream-prefix": "ecs"}}}]'
 
-          echo "Checking if service exists..."
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query "services[0].serviceArn" --output text)
-
-          if [ "$SERVICE_EXISTS" = "None" ]; then
-            echo "Service does not exist. Creating service..."
-            aws ecs create-service --cluster $CLUSTER_NAME --service-name $SERVICE_NAME --task-definition $TASK_DEFINITION_ARN --desired-count 1 --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[subnet-12345678],securityGroups=[sg-12345678],assignPublicIp=ENABLED}"
-          else
-            echo "Service exists. Updating service..."
-            aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --task-definition $TASK_DEFINITION_ARN
-          fi
+          echo "Registering ECS task definition..."
+          aws ecs register-task-definition \
+            --family $TASK_DEFINITION_NAME \
+            --container-definitions "$CONTAINERS_JSON" \
+            --requires-compatibilities "FARGATE" \
+            --cpu "256" \
+            --memory "512" \
+            --network-mode "awsvpc" \
+            --execution-role-arn "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
