@@ -180,13 +180,12 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # Register ECS Task Definition
       - name: Register ECS Task Definition
         id: register-task-def
         run: |
-          CLUSTER_NAME=si-cluster
-          TASK_DEFINITION_NAME=si-task
-
+          CLUSTER_NAME=my-cluster
+          TASK_DEFINITION_NAME=my-task
+      
           DOCKERFILES=$(find . -name 'Dockerfile*')
           CONTAINERS_JSON=""
           PORT=8080  # Starting port for containerPort and hostPort
@@ -194,17 +193,17 @@ jobs:
           CONTAINER_MEMORY=512  # Memory for each container
           TOTAL_CPU=0
           TOTAL_MEMORY=0
-
+      
           echo "Reading image URIs from image-uris.txt..."
           cat image-uris.txt
-
+      
           # Read image URIs from the file
           while IFS=: read -r TAG IMAGE_URI; do
             CONTAINER_NAME="${TAG}-container"
-
+      
             TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
             TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
-
+      
             if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
               CONTAINERS_JSON+="{
                 \"name\": \"$CONTAINER_NAME\",
@@ -220,7 +219,23 @@ jobs:
                 ],
                 \"logConfiguration\": {
                   \"logDriver\": \"awslogs\",
-                            # Continue from previous step
+                  \"options\": {
+                    \"awslogs-group\": \"/ecs/$TASK_DEFINITION_NAME\",
+                    \"awslogs-region\": \"us-east-1\",
+                    \"awslogs-stream-prefix\": \"$CONTAINER_NAME\"
+                  }
+                }
+              },"
+      
+              PORT=$((PORT + 1))  # Increment port for next container
+            else
+              echo "Skipping container $CONTAINER_NAME due to resource limits."
+            fi
+          done < image-uris.txt
+      
+          # Remove the trailing comma
+          CONTAINERS_JSON=${CONTAINERS_JSON%,}
+      
           TASK_DEF_JSON="{
             \"family\": \"$TASK_DEFINITION_NAME\",
             \"networkMode\": \"awsvpc\",
@@ -232,13 +247,14 @@ jobs:
             \"memory\": \"2048\",
             \"executionRoleArn\": \"arn:aws:iam::533267409793:role/ecsTaskExecutionRole\"
           }"
-
+      
           echo "$TASK_DEF_JSON" > task-definition.json
           aws ecs register-task-definition --cli-input-json file://task-definition.json
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
+
 
       # Create or Update ECS Service
       - name: Create or Update ECS Service
