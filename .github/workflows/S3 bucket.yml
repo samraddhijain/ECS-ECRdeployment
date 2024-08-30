@@ -33,7 +33,7 @@ jobs:
 
       - name: Create ECR Repository
         run: |
-          REPO_NAME=demo
+          REPO_NAME=si
           if ! aws ecr describe-repositories --repository-names $REPO_NAME 2>/dev/null; then
             echo "Repository does not exist. Creating repository..."
             aws ecr create-repository --repository-name $REPO_NAME
