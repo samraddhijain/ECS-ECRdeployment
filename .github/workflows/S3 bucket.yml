@@ -45,34 +45,34 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # Build, Tag, and Push Images to Amazon ECR
       - name: Build, Tag, and Push Images to Amazon ECR
         id: build-and-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: si
+          ECR_REPOSITORY: si  # Make sure this matches your ECR repository name
           IMAGE_TAG: ${{ github.sha }}
         run: |
           DOCKERFILES=$(find . -name 'Dockerfile*')
           > image-uris.txt
-          
+      
           for DOCKERFILE in $DOCKERFILES; do
             BASENAME=$(basename $DOCKERFILE)
             TAG=${BASENAME//Dockerfile_/}
             TAG=${TAG:-default}
-            
+      
             IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$TAG-$IMAGE_TAG"
-            
+      
             echo "Building and pushing Docker image for $DOCKERFILE to $IMAGE_URI"
-            
+      
             docker build -f $DOCKERFILE -t $IMAGE_URI .
             docker push $IMAGE_URI
-            
+      
             echo "$TAG:$IMAGE_URI" >> image-uris.txt
           done
-
+      
           # Set IMAGE_URI output
           echo "::set-output name=image_uri::$IMAGE_URI"
+
 
       # Verify Image URIs
       - name: Verify Image URIs
