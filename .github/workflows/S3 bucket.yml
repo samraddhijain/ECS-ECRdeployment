@@ -169,7 +169,7 @@ jobs:
       # Create ECS Cluster
       - name: Create ECS Cluster
         run: |
-          if ! aws ecs describe-clusters --clusters my-cluster --region us-east-1 | grep ACTIVE; then
+          if ! aws ecs describe-clusters --clusters si-cluster --region us-east-1 | grep ACTIVE; then
             echo "Cluster does not exist. Creating cluster..."
             aws ecs create-cluster --cluster-name si-cluster --region us-east-1
           else
@@ -183,8 +183,8 @@ jobs:
       - name: Register ECS Task Definition
         id: register-task-def
         run: |
-          CLUSTER_NAME=my-cluster
-          TASK_DEFINITION_NAME=my-task
+          CLUSTER_NAME=si-cluster
+          TASK_DEFINITION_NAME=si-task
       
           DOCKERFILES=$(find . -name 'Dockerfile*')
           CONTAINERS_JSON=""
