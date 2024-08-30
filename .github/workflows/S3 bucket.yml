@@ -18,24 +18,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+           aws-region: us-east-1
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+
       # Build, Tag, and Push Images to Amazon ECR
+
       - name: Build, Tag, and Push Images to Amazon ECR
         id: build-and-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: si_repo
+          ECR_REPOSITORY: demo
           IMAGE_TAG: ${{ github.sha }}
         run: |
           DOCKERFILES=$(find . -name 'Dockerfile*')
@@ -82,58 +83,35 @@ jobs:
           else
             echo "Bucket already exists. Skipping creation."
           fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
       # Create Log Group
       - name: Create Log Group
         run: |
-          aws logs create-log-group --log-group-name /ecs/si-task || true
-
-      # Get Default VPC ID
-      - name: Get Default VPC ID
-        id: default-vpc
-        run: |
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text)
-          echo "Default VPC ID: $VPC_ID"
-          echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
-          
-      - name: Create Security Group
-        id: create-security-group
-        run: |
-          SECURITY_GROUP_NAME="my-security-group"
-          VPC_ID="${{ env.VPC_ID }}"
-          
-          SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SECURITY_GROUP_NAME" "Name=vpc-id,Values=$VPC_ID" --query 'SecurityGroups[0].GroupId' --output text)
-
-          if [ "$SECURITY_GROUP_ID" == "None" ]; then
-            echo "Creating security group $SECURITY_GROUP_NAME..."
-            SECURITY_GROUP_ID=$(aws ec2 create-security-group --group-name $SECURITY_GROUP_NAME --description "My security group" --vpc-id $VPC_ID --query 'GroupId' --output text)
-          else
-            echo "Security group $SECURITY_GROUP_NAME already exists with ID $SECURITY_GROUP_ID."
-          fi
-          
-          echo "SECURITY_GROUP_ID=$SECURITY_GROUP_ID" >> $GITHUB_ENV
-
-      - name: Get Default Subnets
-        id: default-subnets
-        run: |
-          VPC_ID="${{ env.VPC_ID }}"
-          SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[*].SubnetId" --output text)
-          # Format subnets as a comma-separated list
-          FORMATTED_SUBNETS=$(echo $SUBNETS | tr '\t' ',')
-          echo "Default Subnets: $FORMATTED_SUBNETS"
-          echo "SUBNETS=$FORMATTED_SUBNETS" >> $GITHUB_ENV
+          aws logs create-log-group --log-group-name /ecs/my-task || true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
       # Create ECS Cluster
       - name: Create ECS Cluster
         run: |
-          aws ecs create-cluster --cluster-name si-cluster --region us-east-1 || true
+          aws ecs create-cluster --cluster-name my-cluster --region us-east-1 || true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
       # Register ECS Task Definition
       - name: Register ECS Task Definition
         id: register-task-def
         run: |
-          CLUSTER_NAME=si-cluster
-          TASK_DEFINITION_NAME=si-task
+          CLUSTER_NAME=my-cluster
+          TASK_DEFINITION_NAME=my-task
 
           DOCKERFILES=$(find . -name 'Dockerfile*')
           CONTAINERS_JSON=""
@@ -199,38 +177,46 @@ jobs:
 
           echo "$TASK_DEF_JSON" > task-definition.json
           aws ecs register-task-definition --cli-input-json file://task-definition.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
-      - name: Deploy ECS Service
+      # Create or Update ECS Service
+      - name: Create or Update ECS Service
         run: |
-          CLUSTER_NAME="si-cluster"
-          SERVICE_NAME="si-service"
-          TASK_DEFINITION_NAME="si-task"
-          SUBNETS="${{ env.SUBNETS }}"
-          SECURITY_GROUP_ID="${{ env.SECURITY_GROUP_ID }}"
+          CLUSTER_NAME=my-cluster
+          SERVICE_NAME=my-service
+          TASK_DEFINITION_NAME=my-task
 
-          # Check if the service exists
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].serviceName' --output text 2>/dev/null || echo "MISSING")
+          # Check if the service already exists
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
 
           if [ "$SERVICE_EXISTS" == "MISSING" ]; then
-            echo "Service $SERVICE_NAME does not exist. Creating service..."
+            # Create the service if it doesn't exist
             aws ecs create-service \
               --cluster $CLUSTER_NAME \
               --service-name $SERVICE_NAME \
               --task-definition $TASK_DEFINITION_NAME \
               --desired-count 1 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}"
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+              --region us-east-1
           else
-            echo "Service $SERVICE_NAME already exists. Updating service..."
+            # Update the service if it exists
             aws ecs update-service \
               --cluster $CLUSTER_NAME \
               --service $SERVICE_NAME \
               --task-definition $TASK_DEFINITION_NAME \
-              --desired-count 1
+              --desired-count 1 \
+              --region us-east-1
           fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
 
-          
-      # Run Robot Framework Tests
+       # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
           docker run --rm \
@@ -241,14 +227,12 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # Push the Robot Framework logs to S3 with a timestamp
-      - name: Upload Robot Framework Logs to S3
+      - name: Upload Logs to S3
         run: |
-          LOG_DIR="log"
-          if [ -d "$LOG_DIR" ]; then
-            TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            aws s3 cp "$LOG_DIR" "s3://my-robot-results-bucket/$TIMESTAMP/" --recursive
-            echo "Logs uploaded to S3 with timestamp: $TIMESTAMP"
-          else
-            echo "Log directory does not exist. Skipping upload."
-          fi
+          BUCKET_NAME="my-robot-results-bucket"
+          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+          aws s3 cp log/ s3://$BUCKET_NAME/logs/$TIMESTAMP/ --recursive --region us-east-1
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
