@@ -18,58 +18,46 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+           aws-region: us-east-1
 
-      # Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Create ECR Repository
-        run: |
-          REPO_NAME=si
-          if ! aws ecr describe-repositories --repository-names $REPO_NAME 2>/dev/null; then
-            echo "Repository does not exist. Creating repository..."
-            aws ecr create-repository --repository-name $REPO_NAME
-          else
-            echo "Repository already exists. Skipping creation."
-          fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+
+      # Build, Tag, and Push Images to Amazon ECR
 
       - name: Build, Tag, and Push Images to Amazon ECR
         id: build-and-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: si
+          ECR_REPOSITORY: demo
           IMAGE_TAG: ${{ github.sha }}
         run: |
           DOCKERFILES=$(find . -name 'Dockerfile*')
           > image-uris.txt
-      
+          
           for DOCKERFILE in $DOCKERFILES; do
             BASENAME=$(basename $DOCKERFILE)
             TAG=${BASENAME//Dockerfile_/}
             TAG=${TAG:-default}
-      
+            
             IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$TAG-$IMAGE_TAG"
-      
+            
             echo "Building and pushing Docker image for $DOCKERFILE to $IMAGE_URI"
-      
+            
             docker build -f $DOCKERFILE -t $IMAGE_URI .
             docker push $IMAGE_URI
-      
+            
             echo "$TAG:$IMAGE_URI" >> image-uris.txt
           done
-      
+
+          # Set IMAGE_URI output
           echo "::set-output name=image_uri::$IMAGE_URI"
 
       # Verify Image URIs
@@ -85,52 +73,7 @@ jobs:
           sudo apt-get install -y awscli
           aws --version
 
-      # Create Default VPC, Subnets, Security Groups, and IAM Roles
-      - name: Create Default VPC and Network Resources
-        run: |
-          VPC_ID=$(aws ec2 describe-vpcs --query "Vpcs[?IsDefault].VpcId" --output text)
-          if [ -z "$VPC_ID" ]; then
-            echo "Creating default VPC..."
-            VPC_ID=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 --query "Vpc.VpcId" --output text)
-            aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-support
-            aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-hostnames
-            aws ec2 create-tags --resources $VPC_ID --tags Key=Name,Value=default-vpc
-          else
-            echo "Default VPC already exists."
-          fi
-
-          SUBNET_ID=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC_ID --query "Subnets[0].SubnetId" --output text)
-          if [ -z "$SUBNET_ID" ]; then
-            echo "Creating default subnet..."
-            SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block 10.0.1.0/24 --query "Subnet.SubnetId" --output text)
-            aws ec2 create-tags --resources $SUBNET_ID --tags Key=Name,Value=default-subnet
-          else
-            echo "Default subnet already exists."
-          fi
-
-          SG_ID=$(aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC_ID --query "SecurityGroups[?GroupName=='default'].GroupId" --output text)
-          if [ -z "$SG_ID" ]; then
-            echo "Creating default security group..."
-            SG_ID=$(aws ec2 create-security-group --group-name default --description "Default security group" --vpc-id $VPC_ID --query "GroupId" --output text)
-            aws ec2 create-tags --resources $SG_ID --tags Key=Name,Value=default-sg
-          else
-            echo "Default security group already exists."
-          fi
-
-          ROLE_NAME=ecsTaskExecutionRole
-          ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query "Role.Arn" --output text 2>/dev/null)
-          if [ -z "$ROLE_ARN" ]; then
-            echo "Creating IAM role for ECS Task Execution..."
-            aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document '{"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "ecs-tasks.amazonaws.com"}, "Action": "sts:AssumeRole"}]}'
-            aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-          else
-            echo "IAM role for ECS Task Execution already exists."
-          fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
+      # Create S3 Bucket for Robot Framework Results
       - name: Create S3 Bucket for Robot Framework Results
         run: |
           BUCKET_NAME="my-robot-results-bucket"
@@ -145,101 +88,150 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
+      # Create Log Group
       - name: Create Log Group
         run: |
-          if ! aws logs describe-log-groups --log-group-name-prefix /ecs/my-task 2>/dev/null | grep /ecs/my-task; then
-            echo "Log group does not exist. Creating log group..."
-            aws logs create-log-group --log-group-name /ecs/my-task
-          else
-            echo "Log group already exists. Skipping creation."
-          fi
+          aws logs create-log-group --log-group-name /ecs/my-task || true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
+      # Create ECS Cluster
       - name: Create ECS Cluster
         run: |
-          if ! aws ecs describe-clusters --clusters si-cluster --region us-east-1 | grep ACTIVE; then
-            echo "Cluster does not exist. Creating cluster..."
-            aws ecs create-cluster --cluster-name si-cluster --region us-east-1
-          else
-            echo "Cluster already exists. Skipping creation."
-          fi
+          aws ecs create-cluster --cluster-name my-cluster --region us-east-1 || true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      - name: Verify IAM Role for ECS Task Execution
-        id: verify-role
-        run: |
-          ROLE_NAME=ecsTaskExecutionRole
-
-          # Check if IAM role exists
-          ROLE_EXISTS=$(aws iam get-role --role-name $ROLE_NAME --query "Role.Arn" --output text 2>/dev/null || echo "MISSING")
-
-          if [ "$ROLE_EXISTS" == "MISSING" ]; then
-            echo "Creating IAM role for ECS Task Execution..."
-            aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document '{"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "ecs-tasks.amazonaws.com"}, "Action": "sts:AssumeRole"}]}'
-            aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-          else
-            echo "IAM role for ECS Task Execution already exists."
-          fi
-
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-
+      # Register ECS Task Definition
       - name: Register ECS Task Definition
+        id: register-task-def
         run: |
-          TASK_DEFINITION_NAME=your-task-definition
-          CONTAINERS_JSON='[{"name": "web", "image": "'$(cat image-uris.txt | awk '{print $2}' | head -n 1)'", "essential": true, "memory": 512, "cpu": 256, "logConfiguration": {"logDriver": "awslogs", "options": {"awslogs-group": "/ecs/my-task", "awslogs-region": "us-east-1", "awslogs-stream-prefix": "ecs"}}}]'
+          CLUSTER_NAME=my-cluster
+          TASK_DEFINITION_NAME=my-task
 
-          echo "Registering ECS task definition..."
-          aws ecs register-task-definition \
-            --family $TASK_DEFINITION_NAME \
-            --container-definitions "$CONTAINERS_JSON" \
-            --requires-compatibilities "FARGATE" \
-            --cpu "256" \
-            --memory "512" \
-            --network-mode "awsvpc" \
-            --execution-role-arn "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+          DOCKERFILES=$(find . -name 'Dockerfile*')
+          CONTAINERS_JSON=""
+          PORT=8080  # Starting port for containerPort and hostPort
+          CONTAINER_CPU=256  # CPU units for each container
+          CONTAINER_MEMORY=512  # Memory for each container
+          TOTAL_CPU=0
+          TOTAL_MEMORY=0
+
+          echo "Reading image URIs from image-uris.txt..."
+          cat image-uris.txt
+
+          # Read image URIs from the file
+          while IFS=: read -r TAG IMAGE_URI; do
+            CONTAINER_NAME="${TAG}-container"
+
+            TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
+            TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
+
+            if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
+              CONTAINERS_JSON+="{
+                \"name\": \"$CONTAINER_NAME\",
+                \"image\": \"$IMAGE_URI\",
+                \"essential\": true,
+                \"memory\": $CONTAINER_MEMORY,
+                \"cpu\": $CONTAINER_CPU,
+                \"portMappings\": [
+                  {
+                    \"containerPort\": $PORT,
+                    \"hostPort\": $PORT
+                  }
+                ],
+                \"logConfiguration\": {
+                  \"logDriver\": \"awslogs\",
+                  \"options\": {
+                    \"awslogs-group\": \"/ecs/$TASK_DEFINITION_NAME\",
+                    \"awslogs-region\": \"us-east-1\",
+                    \"awslogs-stream-prefix\": \"$CONTAINER_NAME\"
+                  }
+                }
+              },"
+
+              PORT=$((PORT + 1))  # Increment port for next container
+            else
+              echo "Skipping container $CONTAINER_NAME due to resource limits."
+            fi
+          done < image-uris.txt
+
+          # Remove the trailing comma
+          CONTAINERS_JSON=${CONTAINERS_JSON%,}
+
+          TASK_DEF_JSON="{
+            \"family\": \"$TASK_DEFINITION_NAME\",
+            \"networkMode\": \"awsvpc\",
+            \"containerDefinitions\": [
+              $CONTAINERS_JSON
+            ],
+            \"requiresCompatibilities\": [\"FARGATE\"],
+            \"cpu\": \"1024\",
+            \"memory\": \"2048\",
+            \"executionRoleArn\": \"arn:aws:iam::533267409793:role/ecsTaskExecutionRole\"
+          }"
+
+          echo "$TASK_DEF_JSON" > task-definition.json
+          aws ecs register-task-definition --cli-input-json file://task-definition.json
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # Run Robot Framework Tests
+      # Create or Update ECS Service
+      - name: Create or Update ECS Service
+        run: |
+          CLUSTER_NAME=my-cluster
+          SERVICE_NAME=my-service
+          TASK_DEFINITION_NAME=my-task
+
+          # Check if the service already exists
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
+
+          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+            # Create the service if it doesn't exist
+            aws ecs create-service \
+              --cluster $CLUSTER_NAME \
+              --service-name $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+              --region us-east-1
+          else
+            # Update the service if it exists
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --region us-east-1
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+       # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
           docker run --rm \
             -v $PWD:/robot \
-            ${{ steps.build-and-push.outputs.image_uri }}
+            ${{ steps.build-and-push.outputs.IMAGE_URI }}
         env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      # Create Timestamp for S3 Upload
-      - name: Create Timestamp
-        id: timestamp
-        run: echo "TIMESTAMP=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
-
-      # Upload Robot Framework Results to S3
-      - name: Upload Robot Framework Results to S3
+      - name: Upload Logs to S3
         run: |
-          TIMESTAMP=${{ env.TIMESTAMP }}
-          LOG_DIR="log"
           BUCKET_NAME="my-robot-results-bucket"
-          
-          if [ -d "$LOG_DIR" ]; then
-            echo "Uploading Robot Framework results to S3..."
-            aws s3 cp "$LOG_DIR" "s3://$BUCKET_NAME/robot-results/$TIMESTAMP/" --recursive
-          else
-            echo "Log directory does not exist. Skipping upload."
-          fi
+          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+          aws s3 cp log/ s3://$BUCKET_NAME/logs/$TIMESTAMP/ --recursive --region us-east-1
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
