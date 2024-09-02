@@ -212,8 +212,9 @@ jobs:
       - name: Get Default Subnets
         id: get-subnets
         run: |
-          DEFAULT_SUBNETS=$(aws ec2 describe-subnets --filters "Name=default-for-az,Values=true" --query 'Subnets[*].SubnetId' --output text)
+          DEFAULT_SUBNETS=$(aws ec2 describe-subnets --filters "Name=default-for-az,Values=true" --query 'Subnets[*].SubnetId' --output text | tr '\t' ',' | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
           echo "DEFAULT_SUBNETS=$DEFAULT_SUBNETS" >> $GITHUB_ENV
+
 
       - name: Create Security Group
         id: create-sg
@@ -226,36 +227,36 @@ jobs:
       
       
       - name: Create ECS Service
-        run: |
-          SERVICE_NAME="my-service"
-          CLUSTER_NAME="my-cluster"
-          
-          # Check if the ECS service already exists
-          EXISTING_SERVICE=$(aws ecs describe-services --services $SERVICE_NAME --cluster $CLUSTER_NAME --query 'services[0].serviceName' --output text 2>/dev/null || echo "null")
-          
-          if [ "$EXISTING_SERVICE" == "$SERVICE_NAME" ]; then
-            echo "ECS service $SERVICE_NAME already exists. Updating service..."
-            aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
-          else
-            echo "Creating ECS service $SERVICE_NAME..."
-            aws ecs create-service \
-              --service-name $SERVICE_NAME \
-              --cluster $CLUSTER_NAME \
-              --task-definition my-task \
-              --desired-count 1 \
-              --launch-type FARGATE \
-              --network-configuration '{
-                "awsvpcConfiguration": {
-                  "subnets": ["${{ env.DEFAULT_SUBNETS }}"],
-                  "securityGroups": ["${{ env.SECURITY_GROUP_ID }}"],
-                  "assignPublicIp": "ENABLED"
-                }
-              }'
-          fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+          run: |
+            SERVICE_NAME="my-service"
+            CLUSTER_NAME="my-cluster"
+            
+            # Check if the ECS service already exists
+            EXISTING_SERVICE=$(aws ecs describe-services --services $SERVICE_NAME --cluster $CLUSTER_NAME --query 'services[0].serviceName' --output text 2>/dev/null || echo "null")
+            
+            if [ "$EXISTING_SERVICE" == "$SERVICE_NAME" ]; then
+              echo "ECS service $SERVICE_NAME already exists. Updating service..."
+              aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
+            else
+              echo "Creating ECS service $SERVICE_NAME..."
+              aws ecs create-service \
+                --service-name $SERVICE_NAME \
+                --cluster $CLUSTER_NAME \
+                --task-definition my-task \
+                --desired-count 1 \
+                --launch-type FARGATE \
+                --network-configuration '{
+                  "awsvpcConfiguration": {
+                    "subnets": '"${{ env.DEFAULT_SUBNETS }}"',
+                    "securityGroups": ["${{ env.SECURITY_GROUP_ID }}"],
+                    "assignPublicIp": "ENABLED"
+                  }
+                }'
+            fi
+          env:
+            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_DEFAULT_REGION: us-east-1
 
       - name: Run ECS Task
         run: |
