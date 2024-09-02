@@ -91,7 +91,10 @@ jobs:
        # Create S3 Bucket for Robot Framework Results
       - name: Create S3 Bucket for Robot Framework Results
         run: |
-          BUCKET_NAME="my-robot-results-bucket"
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          BUCKET_NAME="my-robot-results-bucket-$TIMESTAMP"
+          echo "Using bucket name: $BUCKET_NAME"
+      
           if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
             echo "Bucket does not exist. Creating bucket..."
             aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1
@@ -108,7 +111,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
-
 
       # Create Log Group
       - name: Create Log Group
