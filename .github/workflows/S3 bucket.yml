@@ -10,15 +10,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the repository
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -26,12 +23,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Check if ECR Repository exists, and create it if it doesn't
       - name: Check and Create ECR Repository
         run: |
           ECR_REPOSITORY_NAME="demo"
@@ -42,12 +37,7 @@ jobs:
           else
             echo "Repository $ECR_REPOSITORY_NAME already exists. Skipping creation."
           fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
 
-      # Build, Tag, and Push Images to Amazon ECR
       - name: Build, Tag, and Push Images to Amazon ECR
         id: build-and-push
         env:
@@ -74,28 +64,28 @@ jobs:
           done
           # Set IMAGE_URI output
           echo "::set-output name=image_uri::$IMAGE_URI"
-      
-      # Verify Image URIs
+
       - name: Verify Image URIs
         run: |
           echo "Contents of image-uris.txt:"
           cat image-uris.txt
 
-      # Install AWS CLI
       - name: Install AWS CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y awscli
           aws --version
 
-      # Create IAM Role for ECS Task
-      - name: Create IAM Role for ECS Task
+      # Create IAM Role for ECS Task and Fetch ARN
+      - name: Create IAM Role for ECS Task and Fetch ARN
+        id: create-iam-role
         run: |
-          ROLE_EXISTS=$(aws iam get-role --role-name ecsTaskExecutionRole --query 'Role.RoleName' --output text 2>/dev/null || echo "false")
+          ROLE_NAME="ecsTaskExecutionRole"
+          ROLE_EXISTS=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.RoleName' --output text 2>/dev/null || echo "false")
           
-          if [ "$ROLE_EXISTS" != "ecsTaskExecutionRole" ]; then
-            echo "Creating IAM role 'ecsTaskExecutionRole'..."
-            aws iam create-role --role-name ecsTaskExecutionRole --assume-role-policy-document '{
+          if [ "$ROLE_EXISTS" != "$ROLE_NAME" ]; then
+            echo "Creating IAM role '$ROLE_NAME'..."
+            aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document '{
                 "Version": "2012-10-17",
                 "Statement": [
                     {
@@ -108,15 +98,15 @@ jobs:
                 ]
             }'
           else
-            echo "IAM role 'ecsTaskExecutionRole' already exists. Skipping creation."
+            echo "IAM role '$ROLE_NAME' already exists. Skipping creation."
           fi
-      
+
           # Attach the first policy if not already attached
-          POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name ecsTaskExecutionRole --query 'AttachedPolicies[?PolicyName==`ECSServicePolicy`].PolicyName' --output text 2>/dev/null || echo "false")
+          POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name $ROLE_NAME --query 'AttachedPolicies[?PolicyName==`ECSServicePolicy`].PolicyName' --output text 2>/dev/null || echo "false")
           
           if [ "$POLICY_EXISTS" != "ECSServicePolicy" ]; then
             echo "Attaching policy 'ECSServicePolicy'..."
-            aws iam put-role-policy --role-name ecsTaskExecutionRole --policy-name ECSServicePolicy --policy-document '{
+            aws iam put-role-policy --role-name $ROLE_NAME --policy-name ECSServicePolicy --policy-document '{
                 "Version": "2012-10-17",
                 "Statement": [
                     {
@@ -138,13 +128,13 @@ jobs:
           else
             echo "Policy 'ECSServicePolicy' already attached. Skipping attachment."
           fi
-      
+
           # Attach the second policy if not already attached
-          POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name ecsTaskExecutionRole --query 'AttachedPolicies[?PolicyName==`ECRLoggingPolicy`].PolicyName' --output text 2>/dev/null || echo "false")
+          POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name $ROLE_NAME --query 'AttachedPolicies[?PolicyName==`ECRLoggingPolicy`].PolicyName' --output text 2>/dev/null || echo "false")
           
           if [ "$POLICY_EXISTS" != "ECRLoggingPolicy" ]; then
             echo "Attaching policy 'ECRLoggingPolicy'..."
-            aws iam put-role-policy --role-name ecsTaskExecutionRole --policy-name ECRLoggingPolicy --policy-document '{
+            aws iam put-role-policy --role-name $ROLE_NAME --policy-name ECRLoggingPolicy --policy-document '{
                 "Version": "2012-10-17",
                 "Statement": [
                     {
@@ -164,12 +154,12 @@ jobs:
           else
             echo "Policy 'ECRLoggingPolicy' already attached. Skipping attachment."
           fi
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
-    
-      # Create S3 Bucket for Robot Framework Results
+
+          # Fetch and output the IAM Role ARN
+          ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
+          echo "IAM Role ARN: $ROLE_ARN"
+          echo "::set-output name=role_arn::$ROLE_ARN"
+
       - name: Create S3 Bucket for Robot Framework Results
         id: create-s3-bucket
         run: |
@@ -190,16 +180,80 @@ jobs:
             echo "Bucket $BUCKET_NAME already exists. Skipping creation."
           fi
           echo "::set-output name=bucket_name::$BUCKET_NAME"
+
+      - name: Create Log Group
+        run: |
+          aws logs create-log-group --log-group-name /ecs/my-task || true
+
+      - name: Register ECS Task Definition
+        run: |
+          aws ecs register-task-definition \
+            --family my-task \
+            --network-mode bridge \
+            --execution-role-arn "${{ steps.create-iam-role.outputs.role_arn }}" \
+            --container-definitions '[
+              {
+                "name": "my-container",
+                "image": "${{ steps.build-and-push.outputs.image_uri }}",
+                "cpu": 256,
+                "memory": 512,
+                "essential": true,
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/ecs/my-task",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+                }
+              }
+            ]'
+
+      - name: Create ECS Service
+        run: |
+          SERVICE_NAME="my-service"
+          CLUSTER_NAME="my-cluster"
+          
+          # Check if the ECS service already exists
+          EXISTING_SERVICE=$(aws ecs describe-services --services $SERVICE_NAME --cluster $CLUSTER_NAME --query 'services[0].serviceName' --output text 2>/dev/null || echo "null")
+          
+          if [ "$EXISTING_SERVICE" == "$SERVICE_NAME" ]; then
+            echo "ECS service $SERVICE_NAME already exists. Updating service..."
+            aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
+          else
+            echo "Creating ECS service $SERVICE_NAME..."
+            aws ecs create-service \
+              --service-name $SERVICE_NAME \
+              --cluster $CLUSTER_NAME \
+              --task-definition my-task \
+              --desired-count 1 \
+              --launch-type EC2 \
+              --network-configuration '{
+                "awsvpcConfiguration": {
+                  "subnets": ["subnet-12345678"],
+                  "securityGroups": ["sg-12345678"],
+                  "assignPublicIp": "ENABLED"
+                }
+              }'
+          fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # Create Log Group
-      - name: Create Log Group
+      - name: Run ECS Task
         run: |
-          aws logs create-log-group --log-group-name /ecs/my-task || true
+          aws ecs run-task \
+            --cluster my-cluster \
+            --launch-type EC2 \
+            --task-definition my-task
+
+      - name: Upload Logs to S3
+        run: |
+          BUCKET_NAME="${{ steps.create-s3-bucket.outputs.bucket_name }}"
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          aws s3 cp log/ "s3://$BUCKET_NAME/logs-$TIMESTAMP/" --recursive
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-         
+          AWS_DEFAULT_REGION: us-east-1
