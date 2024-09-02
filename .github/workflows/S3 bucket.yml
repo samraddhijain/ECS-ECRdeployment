@@ -227,7 +227,7 @@ jobs:
       
       
       - name: Create ECS Service
-          run: |
+        run: |
             SERVICE_NAME="my-service"
             CLUSTER_NAME="my-cluster"
             
@@ -253,7 +253,7 @@ jobs:
                   }
                 }'
             fi
-          env:
+        env:
             AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
             AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
             AWS_DEFAULT_REGION: us-east-1
