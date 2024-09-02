@@ -90,63 +90,86 @@ jobs:
 
       - name: Create IAM Role for ECS Task
         run: |
-          aws iam create-role --role-name ecsTaskExecutionRole --assume-role-policy-document '{
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Principal": {
-                          "Service": "ecs-tasks.amazonaws.com"
-                      },
-                      "Action": "sts:AssumeRole"
-                  }
-              ]
-          }'
+          # Check if the IAM role exists
+          ROLE_EXISTS=$(aws iam get-role --role-name ecsTaskExecutionRole --query 'Role.RoleName' --output text 2>/dev/null || echo "false")
           
-          aws iam put-role-policy --role-name ecsTaskExecutionRole --policy-name ECSServicePolicy --policy-document '{
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Action": [
-                          "ecs:UpdateService",
-                          "ecs:DescribeServices",
-                          "ecs:DescribeTasks",
-                          "ecr:GetAuthorizationToken",
-                          "ecr:BatchCheckLayerAvailability",
-                          "ecr:GetDownloadUrlForLayer",
-                          "ecr:BatchGetImage",
-                          "sts:GetCallerIdentity"
-                      ],
-                      "Resource": "*"
-                  }
-              ]
-          }'
+          if [ "$ROLE_EXISTS" != "ecsTaskExecutionRole" ]; then
+            echo "Creating IAM role 'ecsTaskExecutionRole'..."
+            aws iam create-role --role-name ecsTaskExecutionRole --assume-role-policy-document '{
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "ecs-tasks.amazonaws.com"
+                        },
+                        "Action": "sts:AssumeRole"
+                    }
+                ]
+            }'
+          else
+            echo "IAM role 'ecsTaskExecutionRole' already exists. Skipping creation."
+          fi
+      
+          # Attach the first policy if not already attached
+          POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name ecsTaskExecutionRole --query 'AttachedPolicies[?PolicyName==`ECSServicePolicy`].PolicyName' --output text 2>/dev/null || echo "false")
           
-          aws iam put-role-policy --role-name ecsTaskExecutionRole --policy-name ECRLoggingPolicy --policy-document '{
-              "Version": "2012-10-17",
-              "Statement": [
-                  {
-                      "Effect": "Allow",
-                      "Action": [
-                          "ecr:GetAuthorizationToken",
-                          "ecr:BatchCheckLayerAvailability",
-                          "ecr:GetDownloadUrlForLayer",
-                          "ecr:BatchGetImage",
-                          "logs:CreateLogStream",
-                          "logs:PutLogEvents"
-                      ],
-                      "Resource": "*"
-                  }
-              ]
-          }'
+          if [ "$POLICY_EXISTS" != "ECSServicePolicy" ]; then
+            echo "Attaching policy 'ECSServicePolicy'..."
+            aws iam put-role-policy --role-name ecsTaskExecutionRole --policy-name ECSServicePolicy --policy-document '{
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "ecs:UpdateService",
+                            "ecs:DescribeServices",
+                            "ecs:DescribeTasks",
+                            "ecr:GetAuthorizationToken",
+                            "ecr:BatchCheckLayerAvailability",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchGetImage",
+                            "sts:GetCallerIdentity"
+                        ],
+                        "Resource": "*"
+                    }
+                ]
+            }'
+          else
+            echo "Policy 'ECSServicePolicy' already attached. Skipping attachment."
+          fi
+      
+          # Attach the second policy if not already attached
+          POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name ecsTaskExecutionRole --query 'AttachedPolicies[?PolicyName==`ECRLoggingPolicy`].PolicyName' --output text 2>/dev/null || echo "false")
+          
+          if [ "$POLICY_EXISTS" != "ECRLoggingPolicy" ]; then
+            echo "Attaching policy 'ECRLoggingPolicy'..."
+            aws iam put-role-policy --role-name ecsTaskExecutionRole --policy-name ECRLoggingPolicy --policy-document '{
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "ecr:GetAuthorizationToken",
+                            "ecr:BatchCheckLayerAvailability",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchGetImage",
+                            "logs:CreateLogStream",
+                            "logs:PutLogEvents"
+                        ],
+                        "Resource": "*"
+                    }
+                ]
+            }'
+          else
+            echo "Policy 'ECRLoggingPolicy' already attached. Skipping attachment."
+          fi
       
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
-
-
+    
        # Create S3 Bucket for Robot Framework Results
       - name: Create S3 Bucket for Robot Framework Results
         run: |
