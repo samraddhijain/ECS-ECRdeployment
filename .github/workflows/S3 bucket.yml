@@ -216,16 +216,26 @@ jobs:
           echo "DEFAULT_SUBNETS=$DEFAULT_SUBNETS" >> $GITHUB_ENV
 
 
-      - name: Create Security Group
-        id: create-sg
+      - name: Set Up Security Group
+        id: setup-sg
         run: |
           VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text)
-          SG_ID=$(aws ec2 create-security-group --group-name my-security-group --description "Security group for ECS tasks" --vpc-id $VPC_ID --output text)
-          echo "SECURITY_GROUP_ID=$SG_ID" >> $GITHUB_ENV
+          
+          # Generate a unique name for the security group
+          SG_NAME="my-security-group-$(date +%s)"
+          
+          # Create the new security group
+          SG_ID=$(aws ec2 create-security-group --group-name $SG_NAME --description "Security group for ECS tasks" --vpc-id $VPC_ID --query "GroupId" --output text)
+          
           # Optionally, set inbound rules for the security group
           aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
-      
-      
+          
+          echo "SECURITY_GROUP_ID=$SG_ID" >> $GITHUB_ENV
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+ 
       - name: Create ECS Service
         run: |
             SERVICE_NAME="my-service"
