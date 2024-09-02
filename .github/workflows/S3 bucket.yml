@@ -76,7 +76,6 @@ jobs:
           sudo apt-get install -y awscli
           aws --version
 
-      # Create IAM Role for ECS Task and Fetch ARN
       - name: Create IAM Role for ECS Task and Fetch ARN
         id: create-iam-role
         run: |
@@ -101,7 +100,6 @@ jobs:
             echo "IAM role '$ROLE_NAME' already exists. Skipping creation."
           fi
 
-          # Attach the first policy if not already attached
           POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name $ROLE_NAME --query 'AttachedPolicies[?PolicyName==`ECSServicePolicy`].PolicyName' --output text 2>/dev/null || echo "false")
           
           if [ "$POLICY_EXISTS" != "ECSServicePolicy" ]; then
@@ -129,7 +127,6 @@ jobs:
             echo "Policy 'ECSServicePolicy' already attached. Skipping attachment."
           fi
 
-          # Attach the second policy if not already attached
           POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name $ROLE_NAME --query 'AttachedPolicies[?PolicyName==`ECRLoggingPolicy`].PolicyName' --output text 2>/dev/null || echo "false")
           
           if [ "$POLICY_EXISTS" != "ECRLoggingPolicy" ]; then
@@ -155,7 +152,6 @@ jobs:
             echo "Policy 'ECRLoggingPolicy' already attached. Skipping attachment."
           fi
 
-          # Fetch and output the IAM Role ARN
           ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
           echo "IAM Role ARN: $ROLE_ARN"
           echo "::set-output name=role_arn::$ROLE_ARN"
@@ -225,58 +221,49 @@ jobs:
           SG_NAME="my-security-group-$(date +%s)"
           
           # Create the new security group
-          SG_ID=$(aws ec2 create-security-group --group-name $SG_NAME --description "Security group for ECS tasks" --vpc-id $VPC_ID --query "GroupId" --output text)
+          SG_ID=$(aws ec2 create-security-group --group-name $SG_NAME --description "Security group for ECS tasks" --vpc-id $VPC_ID --query 'GroupId' --output text)
           
-          # Optionally, set inbound rules for the security group
+          # Add an ingress rule to allow traffic on port 80 (HTTP)
           aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
-          
+
+          # Save the security group ID as an output variable
           echo "SECURITY_GROUP_ID=$SG_ID" >> $GITHUB_ENV
+
+      - name: Deploy to ECS
+        run: |
+          SERVICE_NAME="my-service"
+          CLUSTER_NAME="my-cluster"
+          
+          aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query "services[0].status" --output text 2>/dev/null
+          
+          if [ $? -eq 0 ]; then
+            echo "Service $SERVICE_NAME exists, updating service..."
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --force-new-deployment
+          else
+            echo "Service $SERVICE_NAME does not exist, creating new service..."
+            aws ecs create-service \
+              --cluster $CLUSTER_NAME \
+              --service-name $SERVICE_NAME \
+              --task-definition my-task \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=${DEFAULT_SUBNETS},securityGroups=${SECURITY_GROUP_ID},assignPublicIp=ENABLED}"
+          fi
+
+       # Run Robot Framework Tests
+      - name: Run Robot Framework Tests
+        run: |
+          docker run --rm \
+            -v $PWD:/robot \
+            ${{ steps.build-and-push.outputs.IMAGE_URI }}
         env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
- 
-      - name: Create ECS Service
-        run: |
-            SERVICE_NAME="my-service"
-            CLUSTER_NAME="my-cluster"
-            
-            # Check if the ECS service already exists
-            EXISTING_SERVICE=$(aws ecs describe-services --services $SERVICE_NAME --cluster $CLUSTER_NAME --query 'services[0].serviceName' --output text 2>/dev/null || echo "null")
-            
-            if [ "$EXISTING_SERVICE" == "$SERVICE_NAME" ]; then
-              echo "ECS service $SERVICE_NAME already exists. Updating service..."
-              aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
-            else
-              echo "Creating ECS service $SERVICE_NAME..."
-              aws ecs create-service \
-                --service-name $SERVICE_NAME \
-                --cluster $CLUSTER_NAME \
-                --task-definition my-task \
-                --desired-count 1 \
-                --launch-type FARGATE \
-                --network-configuration "{\"awsvpcConfiguration\":{\"subnets\":[\"${DEFAULT_SUBNETS//,/\",\"}\"],\"securityGroups\":[\"${SECURITY_GROUP_ID}\"],\"assignPublicIp\":\"ENABLED\"}}"
-            fi
-        env:
-            AWS_DEFAULT_REGION: us-east-1
-            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            DEFAULT_SUBNETS: "subnet-0b3fac263ff717686,subnet-033f5370a1d07d02d,subnet-0e248848d1a8e084d,subnet-03e31a0699dc4aa19,subnet-08cbf7d9137946f8c,subnet-065bb2967a48265c8"
-            SECURITY_GROUP_ID: "sg-0f3fcf4b3ff8f06f1"
 
-      - name: Run ECS Task
-        run: |
-          aws ecs run-task \
-            --cluster my-cluster \
-            --launch-type EC2 \
-            --task-definition my-task
 
-      - name: Upload Logs to S3
+      - name: Upload Robot Framework logs to S3
         run: |
-          BUCKET_NAME="${{ steps.create-s3-bucket.outputs.bucket_name }}"
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          aws s3 cp log/ "s3://$BUCKET_NAME/logs-$TIMESTAMP/" --recursive
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+          aws s3 cp log/ s3://${{ steps.create-s3-bucket.outputs.bucket_name }}/log/ --recursive
