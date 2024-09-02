@@ -255,18 +255,14 @@ jobs:
                 --task-definition my-task \
                 --desired-count 1 \
                 --launch-type FARGATE \
-                --network-configuration '{
-                  "awsvpcConfiguration": {
-                    "subnets": '"${{ env.DEFAULT_SUBNETS }}"',
-                    "securityGroups": ["${{ env.SECURITY_GROUP_ID }}"],
-                    "assignPublicIp": "ENABLED"
-                  }
-                }'
+                --network-configuration "{\"awsvpcConfiguration\":{\"subnets\":[\"${DEFAULT_SUBNETS//,/\",\"}\"],\"securityGroups\":[\"${SECURITY_GROUP_ID}\"],\"assignPublicIp\":\"ENABLED\"}}"
             fi
         env:
+            AWS_DEFAULT_REGION: us-east-1
             AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
             AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            AWS_DEFAULT_REGION: us-east-1
+            DEFAULT_SUBNETS: "subnet-0b3fac263ff717686,subnet-033f5370a1d07d02d,subnet-0e248848d1a8e084d,subnet-03e31a0699dc4aa19,subnet-08cbf7d9137946f8c,subnet-065bb2967a48265c8"
+            SECURITY_GROUP_ID: "sg-0f3fcf4b3ff8f06f1"
 
       - name: Run ECS Task
         run: |
