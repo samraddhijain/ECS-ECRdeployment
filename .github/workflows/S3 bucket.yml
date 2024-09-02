@@ -234,15 +234,9 @@ jobs:
           SERVICE_NAME="my-service"
           CLUSTER_NAME="my-cluster"
           
-          aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query "services[0].status" --output text 2>/dev/null
+          SERVICE_STATUS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query "services[0].status" --output text 2>/dev/null || echo "MISSING")
           
-          if [ $? -eq 0 ]; then
-            echo "Service $SERVICE_NAME exists, updating service..."
-            aws ecs update-service \
-              --cluster $CLUSTER_NAME \
-              --service $SERVICE_NAME \
-              --force-new-deployment
-          else
+          if [ "$SERVICE_STATUS" == "MISSING" ]; then
             echo "Service $SERVICE_NAME does not exist, creating new service..."
             aws ecs create-service \
               --cluster $CLUSTER_NAME \
@@ -250,6 +244,12 @@ jobs:
               --task-definition my-task \
               --launch-type FARGATE \
               --network-configuration "awsvpcConfiguration={subnets=${DEFAULT_SUBNETS},securityGroups=${SECURITY_GROUP_ID},assignPublicIp=ENABLED}"
+          else
+            echo "Service $SERVICE_NAME exists, updating service..."
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --force-new-deployment
           fi
 
        # Run Robot Framework Tests
