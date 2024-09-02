@@ -88,20 +88,27 @@ jobs:
           sudo apt-get install -y awscli
           aws --version
 
-      # Create S3 Bucket for Robot Framework Results
+       # Create S3 Bucket for Robot Framework Results
       - name: Create S3 Bucket for Robot Framework Results
         run: |
           BUCKET_NAME="my-robot-results-bucket"
           if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
             echo "Bucket does not exist. Creating bucket..."
             aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1
+            if [ $? -eq 0 ]; then
+              echo "Bucket $BUCKET_NAME created successfully."
+            else
+              echo "Failed to create bucket $BUCKET_NAME."
+              exit 1
+            fi
           else
-            echo "Bucket already exists. Skipping creation."
+            echo "Bucket $BUCKET_NAME already exists. Skipping creation."
           fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
+
 
       # Create Log Group
       - name: Create Log Group
@@ -112,17 +119,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      # Check and Create ECS Cluster
-      - name: Check and Create ECS Cluster
+      # Create ECS Cluster
+      - name: Create ECS Cluster
         run: |
-          CLUSTER_NAME="my-cluster"
-          CLUSTER_EXISTS=$(aws ecs describe-clusters --clusters $CLUSTER_NAME --region us-east-1 --query 'clusters[0].status' --output text 2>/dev/null || echo "MISSING")
-          if [ "$CLUSTER_EXISTS" == "MISSING" ]; then
-            echo "Cluster $CLUSTER_NAME does not exist. Creating..."
-            aws ecs create-cluster --cluster-name $CLUSTER_NAME --region us-east-1
-          else
-            echo "Cluster $CLUSTER_NAME already exists. Skipping creation."
-          fi
+          aws ecs create-cluster --cluster-name my-cluster --region us-east-1 || true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -134,6 +134,7 @@ jobs:
         run: |
           CLUSTER_NAME=my-cluster
           TASK_DEFINITION_NAME=my-task
+
           DOCKERFILES=$(find . -name 'Dockerfile*')
           CONTAINERS_JSON=""
           PORT=8080  # Starting port for containerPort and hostPort
@@ -141,13 +142,17 @@ jobs:
           CONTAINER_MEMORY=512  # Memory for each container
           TOTAL_CPU=0
           TOTAL_MEMORY=0
+
           echo "Reading image URIs from image-uris.txt..."
           cat image-uris.txt
+
           # Read image URIs from the file
           while IFS=: read -r TAG IMAGE_URI; do
             CONTAINER_NAME="${TAG}-container"
+
             TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
             TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
+
             if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
               CONTAINERS_JSON+="{
                 \"name\": \"$CONTAINER_NAME\",
@@ -170,13 +175,16 @@ jobs:
                   }
                 }
               },"
+
               PORT=$((PORT + 1))  # Increment port for next container
             else
               echo "Skipping container $CONTAINER_NAME due to resource limits."
             fi
           done < image-uris.txt
+
           # Remove the trailing comma
           CONTAINERS_JSON=${CONTAINERS_JSON%,}
+
           TASK_DEF_JSON="{
             \"family\": \"$TASK_DEFINITION_NAME\",
             \"networkMode\": \"awsvpc\",
@@ -188,6 +196,7 @@ jobs:
             \"memory\": \"2048\",
             \"executionRoleArn\": \"arn:aws:iam::533267409793:role/ecsTaskExecutionRole\"
           }"
+
           echo "$TASK_DEF_JSON" > task-definition.json
           aws ecs register-task-definition --cli-input-json file://task-definition.json
         env:
@@ -201,8 +210,10 @@ jobs:
           CLUSTER_NAME=my-cluster
           SERVICE_NAME=my-service
           TASK_DEFINITION_NAME=my-task
+
           # Check if the service already exists
           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
+
           if [ "$SERVICE_EXISTS" == "MISSING" ]; then
             # Create the service if it doesn't exist
             aws ecs create-service \
@@ -211,4 +222,39 @@ jobs:
               --task-definition $TASK_DEFINITION_NAME \
               --desired-count 1 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+              --region us-east-1
+          else
+            # Update the service if it exists
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --region us-east-1
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+       # Run Robot Framework Tests
+      - name: Run Robot Framework Tests
+        run: |
+          docker run --rm \
+            -v $PWD:/robot \
+            ${{ steps.build-and-push.outputs.IMAGE_URI }}
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Upload Logs to S3
+        run: |
+          BUCKET_NAME="my-robot-results-bucket"
+          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+          aws s3 cp log/ s3://$BUCKET_NAME/logs/$TIMESTAMP/ --recursive --region us-east-1
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
