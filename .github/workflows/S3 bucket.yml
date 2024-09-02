@@ -253,7 +253,7 @@ jobs:
               --memory 512 \
               --container-definitions '[{
                 "name": "my-container",
-                "image": "my-image",
+                "image": "IMAGE_URI",
                 "essential": true,
                 "portMappings": [{
                   "containerPort": 80,
