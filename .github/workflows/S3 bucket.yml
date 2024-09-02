@@ -189,7 +189,7 @@ jobs:
         run: |
           aws ecs register-task-definition \
             --family my-task \
-            --network-mode bridge \
+            --network-mode awsvpc \
             --execution-role-arn "${{ steps.create-iam-role.outputs.role_arn }}" \
             --container-definitions '[
               {
@@ -227,14 +227,7 @@ jobs:
               --cluster $CLUSTER_NAME \
               --task-definition my-task \
               --desired-count 1 \
-              --launch-type EC2 \
-              --network-configuration '{
-                "awsvpcConfiguration": {
-                  "subnets": ["subnet-12345678"],
-                  "securityGroups": ["sg-12345678"],
-                  "assignPublicIp": "ENABLED"
-                }
-              }'
+              --launch-type EC2
           fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
