@@ -209,6 +209,22 @@ jobs:
               }
             ]'
 
+      - name: Get Default Subnets
+        id: get-subnets
+        run: |
+          DEFAULT_SUBNETS=$(aws ec2 describe-subnets --filters "Name=default-for-az,Values=true" --query 'Subnets[*].SubnetId' --output text)
+          echo "DEFAULT_SUBNETS=$DEFAULT_SUBNETS" >> $GITHUB_ENV
+
+      - name: Create Security Group
+        id: create-sg
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text)
+          SG_ID=$(aws ec2 create-security-group --group-name my-security-group --description "Security group for ECS tasks" --vpc-id $VPC_ID --output text)
+          echo "SECURITY_GROUP_ID=$SG_ID" >> $GITHUB_ENV
+          # Optionally, set inbound rules for the security group
+          aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
+      
+      
       - name: Create ECS Service
         run: |
           SERVICE_NAME="my-service"
@@ -227,7 +243,14 @@ jobs:
               --cluster $CLUSTER_NAME \
               --task-definition my-task \
               --desired-count 1 \
-              --launch-type EC2
+              --launch-type FARGATE \
+              --network-configuration '{
+                "awsvpcConfiguration": {
+                  "subnets": ["${{ env.DEFAULT_SUBNETS }}"],
+                  "securityGroups": ["${{ env.SECURITY_GROUP_ID }}"],
+                  "assignPublicIp": "ENABLED"
+                }
+              }'
           fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
