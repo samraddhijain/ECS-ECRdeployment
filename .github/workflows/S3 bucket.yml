@@ -243,42 +243,58 @@ jobs:
             echo "Cluster $CLUSTER_NAME created successfully."
           fi
 
+      - name: Register Task Definition
+        run: |
+            aws ecs register-task-definition \
+              --family my-task \
+              --network-mode awsvpc \
+              --requires-compatibilities FARGATE \
+              --cpu 256 \
+              --memory 512 \
+              --container-definitions '[{
+                "name": "my-container",
+                "image": "my-image",
+                "essential": true,
+                "portMappings": [{
+                  "containerPort": 80,
+                  "hostPort": 80,
+                  "protocol": "tcp"
+                }]
+              }]'
+        
       - name: Deploy to ECS
         run: |
-          SERVICE_NAME="my-service"
-          CLUSTER_NAME="my-cluster"
+            SERVICE_NAME="my-service"
+            CLUSTER_NAME="my-cluster"
+            TASK_DEFINITION="my-task"
+            
+            # Check if the service exists
+            if aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME | grep MISSING; then
+              echo "Service $SERVICE_NAME does not exist, creating new service..."
+              aws ecs create-service \
+                --cluster $CLUSTER_NAME \
+                --service-name $SERVICE_NAME \
+                --task-definition $TASK_DEFINITION \
+                --desired-count 1 \
+                --launch-type FARGATE \
+                --network-configuration '{
+                  "awsvpcConfiguration": {
+                    "subnets": ["subnet-12345678"],
+                    "securityGroups": ["sg-12345678"],
+                    "assignPublicIp": "ENABLED"
+                  }
+                }'
+            else
+              echo "Service $SERVICE_NAME already exists, updating service..."
+              aws ecs update-service \
+                --cluster $CLUSTER_NAME \
+                --service $SERVICE_NAME \
+                --task-definition $TASK_DEFINITION
+            fi
           
-          # Check if the service exists
-          SERVICE_STATUS=$(aws ecs describe-services \
-            --cluster $CLUSTER_NAME \
-            --services $SERVICE_NAME \
-            --query "failures[?reason=='MISSING']" \
-            --output text)
-          
-          if [ -z "$SERVICE_STATUS" ]; then
-            echo "Service $SERVICE_NAME exists, updating service..."
-            aws ecs update-service \
-              --cluster $CLUSTER_NAME \
-              --service $SERVICE_NAME \
-              --force-new-deployment
-          else
-            echo "Service $SERVICE_NAME does not exist, creating new service..."
-            aws ecs create-service \
-              --cluster $CLUSTER_NAME \
-              --service-name $SERVICE_NAME \
-              --task-definition my-task \
-              --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=${DEFAULT_SUBNETS},securityGroups=${SECURITY_GROUP_ID},assignPublicIp=ENABLED}" \
-              --desired-count 1
-          fi
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          DEFAULT_SUBNETS: ${{ env.DEFAULT_SUBNETS }}
-          SECURITY_GROUP_ID: ${{ env.SECURITY_GROUP_ID }}
-
       - name: Run Robot Framework Tests
         run: |
-          docker run --rm -v $PWD:/robot ${{ steps.build-and-push.outputs.image_uri }}
+            docker run --rm -v $PWD:/robot ${{ steps.build-and-push.outputs.image_uri }}
 
       - name: Upload Robot Framework Logs to S3
         run: |
