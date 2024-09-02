@@ -211,7 +211,6 @@ jobs:
           DEFAULT_SUBNETS=$(aws ec2 describe-subnets --filters "Name=default-for-az,Values=true" --query 'Subnets[*].SubnetId' --output text | tr '\t' ',' | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
           echo "DEFAULT_SUBNETS=$DEFAULT_SUBNETS" >> $GITHUB_ENV
 
-
       - name: Set Up Security Group
         id: setup-sg
         run: |
@@ -225,60 +224,63 @@ jobs:
           
           # Add an ingress rule to allow traffic on port 80 (HTTP)
           aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
+          
+          echo "Security Group ID: $SG_ID"
+          echo "::set-output name=sg_id::$SG_ID"
 
-          # Save the security group ID as an output variable
-          echo "SECURITY_GROUP_ID=$SG_ID" >> $GITHUB_ENV
+      - name: Create ECS Cluster
+        run: |
+          CLUSTER_NAME="my-cluster"
+          
+          # Check if the cluster exists
+          CLUSTER_EXISTS=$(aws ecs describe-clusters --clusters $CLUSTER_NAME --query "clusters[?clusterName=='$CLUSTER_NAME'].clusterName" --output text)
+          
+          if [ "$CLUSTER_EXISTS" == "$CLUSTER_NAME" ]; then
+            echo "Cluster $CLUSTER_NAME already exists. Skipping creation."
+          else
+            echo "Creating ECS cluster $CLUSTER_NAME..."
+            aws ecs create-cluster --cluster-name $CLUSTER_NAME
+            echo "Cluster $CLUSTER_NAME created successfully."
+          fi
 
-      - name: Deploy to ECS
+      - name: Create and Update ECS Service
         run: |
           SERVICE_NAME="my-service"
           CLUSTER_NAME="my-cluster"
+          SUBNETS="${{ steps.get-subnets.outputs.DEFAULT_SUBNETS }}"
+          SG_ID="${{ steps.setup-sg.outputs.sg_id }}"
           
-          echo "Checking if service $SERVICE_NAME exists in cluster $CLUSTER_NAME..."
-          
-          SERVICE_EXISTS=$(aws ecs describe-services \
-            --cluster $CLUSTER_NAME \
-            --services $SERVICE_NAME \
-            --query "services[0].serviceName" \
-            --output text)
-          
-          if [ "$SERVICE_EXISTS" == "None" ]; then
-            echo "Service $SERVICE_NAME does not exist, creating new service..."
+          if ! aws ecs describe-services --services $SERVICE_NAME --cluster $CLUSTER_NAME; then
+            echo "Service does not exist. Creating new service..."
             aws ecs create-service \
               --cluster $CLUSTER_NAME \
               --service-name $SERVICE_NAME \
               --task-definition my-task \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=${DEFAULT_SUBNETS},securityGroups=${SECURITY_GROUP_ID},assignPublicIp=ENABLED}" \
+              --network-configuration "awsvpcConfiguration={subnets=$SUBNETS,securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
               --desired-count 1
           else
-            echo "Service $SERVICE_NAME exists, updating service..."
+            echo "Service already exists. Updating service..."
             aws ecs update-service \
               --cluster $CLUSTER_NAME \
               --service $SERVICE_NAME \
-              --force-new-deployment
+              --task-definition my-task \
+              --desired-count 1
           fi
-        shell: bash
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          DEFAULT_SUBNETS: '["subnet-0b3fac263ff717686","subnet-033f5370a1d07d02d","subnet-0e248848d1a8e084d","subnet-03e31a0699dc4aa19","subnet-08cbf7d9137946f8c","subnet-065bb2967a48265c8"]'
-          SECURITY_GROUP_ID: sg-0678515dfe14b9275
 
-       # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
-          docker run --rm \
-            -v $PWD:/robot \
-            ${{ steps.build-and-push.outputs.IMAGE_URI }}
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          docker run --rm -v $PWD:/robot ${{ steps.build-and-push.outputs.image_uri }}
 
-
-      - name: Upload Robot Framework logs to S3
+      - name: Upload Robot Framework Logs to S3
         run: |
-          aws s3 cp log/ s3://${{ steps.create-s3-bucket.outputs.bucket_name }}/log/ --recursive
+          LOG_DIR="log/"
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          S3_BUCKET="${{ steps.create-s3-bucket.outputs.bucket_name }}"
+          
+          if [ -d "$LOG_DIR" ]; then
+            aws s3 cp "$LOG_DIR" "s3://$S3_BUCKET/logs-$TIMESTAMP/" --recursive
+            echo "Logs uploaded to S3 bucket: s3://$S3_BUCKET/logs-$TIMESTAMP/"
+          else
+            echo "Log directory $LOG_DIR does not exist. Skipping upload."
+          fi
