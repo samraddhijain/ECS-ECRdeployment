@@ -88,6 +88,65 @@ jobs:
           sudo apt-get install -y awscli
           aws --version
 
+      - name: Create IAM Role for ECS Task
+        run: |
+          aws iam create-role --role-name ecsTaskExecutionRole --assume-role-policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Principal": {
+                          "Service": "ecs-tasks.amazonaws.com"
+                      },
+                      "Action": "sts:AssumeRole"
+                  }
+              ]
+          }'
+          
+          aws iam put-role-policy --role-name ecsTaskExecutionRole --policy-name ECSServicePolicy --policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "ecs:UpdateService",
+                          "ecs:DescribeServices",
+                          "ecs:DescribeTasks",
+                          "ecr:GetAuthorizationToken",
+                          "ecr:BatchCheckLayerAvailability",
+                          "ecr:GetDownloadUrlForLayer",
+                          "ecr:BatchGetImage",
+                          "sts:GetCallerIdentity"
+                      ],
+                      "Resource": "*"
+                  }
+              ]
+          }'
+          
+          aws iam put-role-policy --role-name ecsTaskExecutionRole --policy-name ECRLoggingPolicy --policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Action": [
+                          "ecr:GetAuthorizationToken",
+                          "ecr:BatchCheckLayerAvailability",
+                          "ecr:GetDownloadUrlForLayer",
+                          "ecr:BatchGetImage",
+                          "logs:CreateLogStream",
+                          "logs:PutLogEvents"
+                      ],
+                      "Resource": "*"
+                  }
+              ]
+          }'
+      
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+
        # Create S3 Bucket for Robot Framework Results
       - name: Create S3 Bucket for Robot Framework Results
         run: |
