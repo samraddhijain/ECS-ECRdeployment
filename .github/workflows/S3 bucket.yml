@@ -243,30 +243,38 @@ jobs:
             echo "Cluster $CLUSTER_NAME created successfully."
           fi
 
-      - name: Create and Update ECS Service
+      - name: Deploy to ECS
         run: |
           SERVICE_NAME="my-service"
           CLUSTER_NAME="my-cluster"
-          SUBNETS="${{ steps.get-subnets.outputs.DEFAULT_SUBNETS }}"
-          SG_ID="${{ steps.setup-sg.outputs.sg_id }}"
           
-          if ! aws ecs describe-services --services $SERVICE_NAME --cluster $CLUSTER_NAME; then
-            echo "Service does not exist. Creating new service..."
+          # Check if the service exists
+          SERVICE_STATUS=$(aws ecs describe-services \
+            --cluster $CLUSTER_NAME \
+            --services $SERVICE_NAME \
+            --query "failures[?reason=='MISSING']" \
+            --output text)
+          
+          if [ -z "$SERVICE_STATUS" ]; then
+            echo "Service $SERVICE_NAME exists, updating service..."
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --force-new-deployment
+          else
+            echo "Service $SERVICE_NAME does not exist, creating new service..."
             aws ecs create-service \
               --cluster $CLUSTER_NAME \
               --service-name $SERVICE_NAME \
               --task-definition my-task \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=$SUBNETS,securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
-              --desired-count 1
-          else
-            echo "Service already exists. Updating service..."
-            aws ecs update-service \
-              --cluster $CLUSTER_NAME \
-              --service $SERVICE_NAME \
-              --task-definition my-task \
+              --network-configuration "awsvpcConfiguration={subnets=${DEFAULT_SUBNETS},securityGroups=${SECURITY_GROUP_ID},assignPublicIp=ENABLED}" \
               --desired-count 1
           fi
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          DEFAULT_SUBNETS: ${{ env.DEFAULT_SUBNETS }}
+          SECURITY_GROUP_ID: ${{ env.SECURITY_GROUP_ID }}
 
       - name: Run Robot Framework Tests
         run: |
