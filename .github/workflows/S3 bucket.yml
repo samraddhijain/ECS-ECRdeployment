@@ -234,9 +234,15 @@ jobs:
           SERVICE_NAME="my-service"
           CLUSTER_NAME="my-cluster"
           
-          SERVICE_STATUS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query "services[0].status" --output text 2>/dev/null || echo "MISSING")
+          echo "Checking if service $SERVICE_NAME exists in cluster $CLUSTER_NAME..."
           
-          if [ "$SERVICE_STATUS" == "MISSING" ]; then
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster $CLUSTER_NAME \
+            --services $SERVICE_NAME \
+            --query "services[0].serviceName" \
+            --output text)
+          
+          if [ "$SERVICE_EXISTS" == "None" ]; then
             echo "Service $SERVICE_NAME does not exist, creating new service..."
             aws ecs create-service \
               --cluster $CLUSTER_NAME \
@@ -251,6 +257,14 @@ jobs:
               --service $SERVICE_NAME \
               --force-new-deployment
           fi
+        shell: /usr/bin/bash -e {0}
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          DEFAULT_SUBNETS: '["subnet-0b3fac263ff717686","subnet-033f5370a1d07d02d","subnet-0e248848d1a8e084d","subnet-03e31a0699dc4aa19","subnet-08cbf7d9137946f8c","subnet-065bb2967a48265c8"]'
+          SECURITY_GROUP_ID: sg-0678515dfe14b9275
 
        # Run Robot Framework Tests
       - name: Run Robot Framework Tests
