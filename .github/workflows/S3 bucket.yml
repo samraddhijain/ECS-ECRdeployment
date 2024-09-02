@@ -278,7 +278,7 @@ jobs:
             \"requiresCompatibilities\": [\"FARGATE\"],
             \"cpu\": \"1024\",
             \"memory\": \"2048\",
-            \"executionRoleArn\": \"arn:aws:iam::533267409793:role/ecsTaskExecutionRole\"
+            \"executionRoleArn\": \"arn:aws:iam::arn:aws:iam::363241185855:role/ecsTaskExecutionRole\"
           }"
 
           echo "$TASK_DEF_JSON" > task-definition.json
