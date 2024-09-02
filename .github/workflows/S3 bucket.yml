@@ -249,7 +249,8 @@ jobs:
               --service-name $SERVICE_NAME \
               --task-definition my-task \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=${DEFAULT_SUBNETS},securityGroups=${SECURITY_GROUP_ID},assignPublicIp=ENABLED}"
+              --network-configuration "awsvpcConfiguration={subnets=${DEFAULT_SUBNETS},securityGroups=${SECURITY_GROUP_ID},assignPublicIp=ENABLED}" \
+              --desired-count 1
           else
             echo "Service $SERVICE_NAME exists, updating service..."
             aws ecs update-service \
@@ -257,7 +258,7 @@ jobs:
               --service $SERVICE_NAME \
               --force-new-deployment
           fi
-        shell: /usr/bin/bash -e {0}
+        shell: bash
         env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_REGION: us-east-1
