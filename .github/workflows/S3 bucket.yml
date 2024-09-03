@@ -307,19 +307,21 @@ jobs:
           echo "::set-output name=sg_id::$SG_ID"
       
       - name: Create or Update ECS Service
+        shell: bash
         run: |
           CLUSTER_NAME=my-cluster
           SERVICE_NAME=my-service
           TASK_DEFINITION_NAME=my-task
-          
+      
           # Convert the subnets environment variable to a comma-separated string
-          SUBNETS=$(echo $DEFAULT_SUBNETS | tr -d '[]' | tr ',' ' ' | sed 's/ /,/g')
-          
+          # Remove the quotes around subnet IDs and format as JSON array
+          SUBNETS=$(echo $DEFAULT_SUBNETS | tr -d '[]"')
+      
           echo "Subnets being used: $SUBNETS"
-          
+      
           # Check if the service already exists
           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-          
+      
           if [ "$SERVICE_EXISTS" == "MISSING" ]; then
             # Create the service if it doesn't exist
             aws ecs create-service \
@@ -344,6 +346,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           DEFAULT_SUBNETS: ${{ steps.get-subnets.outputs.DEFAULT_SUBNETS }}
+          VPC_ID: ${{ steps.get-vpc.outputs.vpc_id }}
+          sg_id: ${{ steps.setup-sg.outputs.sg_id }}
 
        # Run Robot Framework Tests
       - name: Run Robot Framework Tests
