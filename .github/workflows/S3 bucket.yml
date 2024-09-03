@@ -181,30 +181,6 @@ jobs:
         run: |
           aws logs create-log-group --log-group-name /ecs/my-task || true
 
-      - name: Register ECS Task Definition
-        run: |
-          aws ecs register-task-definition \
-            --family my-task \
-            --network-mode awsvpc \
-            --execution-role-arn "${{ steps.create-iam-role.outputs.role_arn }}" \
-            --container-definitions '[
-              {
-                "name": "my-container",
-                "image": "${{ steps.build-and-push.outputs.image_uri }}",
-                "cpu": 256,
-                "memory": 512,
-                "essential": true,
-                "logConfiguration": {
-                  "logDriver": "awslogs",
-                  "options": {
-                    "awslogs-group": "/ecs/my-task",
-                    "awslogs-region": "us-east-1",
-                    "awslogs-stream-prefix": "ecs"
-                  }
-                }
-              }
-            ]'
-
       - name: Get Default Subnets
         id: get-subnets
         run: |
@@ -243,12 +219,13 @@ jobs:
             echo "Cluster $CLUSTER_NAME created successfully."
           fi
 
+    # Register ECS Task Definition
       - name: Register ECS Task Definition
         id: register-task-def
         run: |
           CLUSTER_NAME=my-cluster
           TASK_DEFINITION_NAME=my-task
-      
+
           DOCKERFILES=$(find . -name 'Dockerfile*')
           CONTAINERS_JSON=""
           PORT=8080  # Starting port for containerPort and hostPort
@@ -256,20 +233,17 @@ jobs:
           CONTAINER_MEMORY=512  # Memory for each container
           TOTAL_CPU=0
           TOTAL_MEMORY=0
-      
-          # Fetch the IAM role ARN at runtime
-          EXECUTION_ROLE_ARN=$(aws iam get-role --role-name ecsTaskExecutionRole --query 'Role.Arn' --output text)
-      
+
           echo "Reading image URIs from image-uris.txt..."
           cat image-uris.txt
-      
+
           # Read image URIs from the file
           while IFS=: read -r TAG IMAGE_URI; do
             CONTAINER_NAME="${TAG}-container"
-      
+
             TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
             TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
-      
+
             if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
               CONTAINERS_JSON+="{
                 \"name\": \"$CONTAINER_NAME\",
@@ -292,16 +266,16 @@ jobs:
                   }
                 }
               },"
-      
+
               PORT=$((PORT + 1))  # Increment port for next container
             else
               echo "Skipping container $CONTAINER_NAME due to resource limits."
             fi
           done < image-uris.txt
-      
+
           # Remove the trailing comma
           CONTAINERS_JSON=${CONTAINERS_JSON%,}
-      
+
           TASK_DEF_JSON="{
             \"family\": \"$TASK_DEFINITION_NAME\",
             \"networkMode\": \"awsvpc\",
@@ -311,9 +285,9 @@ jobs:
             \"requiresCompatibilities\": [\"FARGATE\"],
             \"cpu\": \"1024\",
             \"memory\": \"2048\",
-            \"executionRoleArn\": \"$EXECUTION_ROLE_ARN\"
+            --execution-role-arn "${{ steps.create-iam-role.outputs.role_arn }}" \
           }"
-      
+
           echo "$TASK_DEF_JSON" > task-definition.json
           aws ecs register-task-definition --cli-input-json file://task-definition.json
         env:
@@ -321,50 +295,57 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-        
-      - name: Deploy to ECS
+      # Create or Update ECS Service
+      - name: Create or Update ECS Service
         run: |
-            SERVICE_NAME="my-service"
-            CLUSTER_NAME="my-cluster"
-            TASK_DEFINITION="my-task"
-            
-            # Check if the service exists
-            if aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME | grep MISSING; then
-              echo "Service $SERVICE_NAME does not exist, creating new service..."
-              aws ecs create-service \
-                --cluster $CLUSTER_NAME \
-                --service-name $SERVICE_NAME \
-                --task-definition $TASK_DEFINITION \
-                --desired-count 1 \
-                --launch-type FARGATE \
-                --network-configuration '{
-                  "awsvpcConfiguration": {
-                    "subnets": ["subnet-12345678"],
-                    "securityGroups": ["sg-12345678"],
-                    "assignPublicIp": "ENABLED"
-                  }
-                }'
-            else
-              echo "Service $SERVICE_NAME already exists, updating service..."
-              aws ecs update-service \
-                --cluster $CLUSTER_NAME \
-                --service $SERVICE_NAME \
-                --task-definition $TASK_DEFINITION
-            fi
-          
+          CLUSTER_NAME=my-cluster
+          SERVICE_NAME=my-service
+          TASK_DEFINITION_NAME=my-task
+
+          # Check if the service already exists
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
+
+          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+            # Create the service if it doesn't exist
+            aws ecs create-service \
+              --cluster $CLUSTER_NAME \
+              --service-name $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE, subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
+              --region us-east-1
+          else
+            # Update the service if it exists
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --task-definition $TASK_DEFINITION_NAME \
+              --desired-count 1 \
+              --region us-east-1
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+       # Run Robot Framework Tests
       - name: Run Robot Framework Tests
         run: |
-            docker run --rm -v $PWD:/robot ${{ steps.build-and-push.outputs.image_uri }}
+          docker run --rm \
+            -v $PWD:/robot \
+            ${{ steps.build-and-push.outputs.IMAGE_URI }}
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Upload Robot Framework Logs to S3
+      - name: Upload Logs to S3
         run: |
-          LOG_DIR="log/"
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          S3_BUCKET="${{ steps.create-s3-bucket.outputs.bucket_name }}"
-          
-          if [ -d "$LOG_DIR" ]; then
-            aws s3 cp "$LOG_DIR" "s3://$S3_BUCKET/logs-$TIMESTAMP/" --recursive
-            echo "Logs uploaded to S3 bucket: s3://$S3_BUCKET/logs-$TIMESTAMP/"
-          else
-            echo "Log directory $LOG_DIR does not exist. Skipping upload."
-          fi
+          BUCKET_NAME="my-robot-results-bucket"
+          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+          aws s3 cp log/ s3://$BUCKET_NAME/logs/$TIMESTAMP/ --recursive --region us-east-1
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
