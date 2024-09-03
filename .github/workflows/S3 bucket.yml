@@ -181,31 +181,6 @@ jobs:
         run: |
           aws logs create-log-group --log-group-name /ecs/my-task || true
 
-      - name: Get Default Subnets
-        id: get-subnets
-        run: |
-          DEFAULT_SUBNETS=$(aws ec2 describe-subnets --filters "Name=default-for-az,Values=true" --query 'Subnets[*].SubnetId' --output text | tr '\t' ',' | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
-          echo "DEFAULT_SUBNETS=$DEFAULT_SUBNETS" >> $GITHUB_ENV
-
-      - name: Get Security Group ID
-        id: setup-sg
-        run: |
-          # Replace with actual logic to get your security group ID
-          SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=my-security-group" --query 'SecurityGroups[0].GroupId' --output text)
-          echo "sg_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
-          
-          # Generate a unique name for the security group
-          SG_NAME="my-security-group-$(date +%s)"
-          
-          # Create the new security group
-          SG_ID=$(aws ec2 create-security-group --group-name $SG_NAME --description "Security group for ECS tasks" --vpc-id $VPC_ID --query 'GroupId' --output text)
-          
-          # Add an ingress rule to allow traffic on port 80 (HTTP)
-          aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0
-          
-          echo "Security Group ID: $SG_ID"
-          echo "::set-output name=sg_id::$SG_ID"
-
       - name: Create ECS Cluster
         run: |
           CLUSTER_NAME="my-cluster"
@@ -287,21 +262,64 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
+
+      - name: Get Subnets
+        id: get-subnets
+        run: |
+          # Retrieve default subnets and format them
+          DEFAULT_SUBNETS=$(aws ec2 describe-subnets --filters "Name=default-for-az,Values=true" --query 'Subnets[*].SubnetId' --output text | tr '\t' ',' | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+          echo "DEFAULT_SUBNETS=$DEFAULT_SUBNETS" >> $GITHUB_ENV
+          echo "::set-output name=DEFAULT_SUBNETS::$DEFAULT_SUBNETS"
+
+      - name: Get VPC ID
+        id: get-vpc
+        run: |
+          # Retrieve the VPC ID (assuming there's only one VPC; adjust if necessary)
+          VPC_ID=$(aws ec2 describe-vpcs --query 'Vpcs[0].VpcId' --output text --region us-east-1)
+          echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
+          echo "::set-output name=vpc_id::$VPC_ID"
+  
+      - name: Get Security Group ID
+        id: setup-sg
+        run: |
+          VPC_ID=${{ steps.get-vpc.outputs.vpc_id }}
+          
+          # Check if the security group already exists
+          SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=my-security-group" --query 'SecurityGroups[0].GroupId' --output text --region us-east-1)
+          
+          if [ "$SECURITY_GROUP_ID" != "None" ]; then
+            echo "sg_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
+          else
+            # Generate a unique name for the new security group
+            SG_NAME="my-security-group-$(date +%s)"
+            
+            # Create the new security group
+            SG_ID=$(aws ec2 create-security-group --group-name $SG_NAME --description "Security group for ECS tasks" --vpc-id $VPC_ID --query 'GroupId' --output text --region us-east-1)
+            echo "Created Security Group ID: $SG_ID"
+            
+            # Add an ingress rule to allow traffic on port 80 (HTTP)
+            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0 --region us-east-1
+            echo "Ingress rule added to Security Group ID: $SG_ID"
+            
+            echo "sg_id=$SG_ID" >> $GITHUB_ENV
+          fi
+          
+          echo "::set-output name=sg_id::$SG_ID"
       
       - name: Create or Update ECS Service
         run: |
           CLUSTER_NAME=my-cluster
           SERVICE_NAME=my-service
           TASK_DEFINITION_NAME=my-task
-
+          
           # Convert the subnets environment variable to a comma-separated string
           SUBNETS=$(echo $DEFAULT_SUBNETS | tr -d '[]' | tr ',' ' ' | sed 's/ /,/g')
-
+          
           echo "Subnets being used: $SUBNETS"
-
+          
           # Check if the service already exists
           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-
+          
           if [ "$SERVICE_EXISTS" == "MISSING" ]; then
             # Create the service if it doesn't exist
             aws ecs create-service \
@@ -310,7 +328,7 @@ jobs:
               --task-definition $TASK_DEFINITION_NAME \
               --desired-count 1 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[${{ env.sg_id }}],assignPublicIp=ENABLED}" \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[${{ steps.setup-sg.outputs.sg_id }}],assignPublicIp=ENABLED}" \
               --region us-east-1
           else
             # Update the service if it exists
@@ -325,6 +343,7 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          DEFAULT_SUBNETS: ${{ steps.get-subnets.outputs.DEFAULT_SUBNETS }}
 
        # Run Robot Framework Tests
       - name: Run Robot Framework Tests
