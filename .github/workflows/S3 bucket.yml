@@ -299,7 +299,7 @@ jobs:
               --task-definition $TASK_DEFINITION_NAME \
               --desired-count 1 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=${DEFAULT_SUBNETS},securityGroups=[${{ steps.setup-sg.outputs.sg_id }}],assignPublicIp=ENABLED}" \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-0bb1c79de3EXAMPLE,subnet-0bb1c79de4EXAMPLE],securityGroups=[sg-0123456789abcdef0],assignPublicIp=ENABLED}" \
               --region us-east-1
           else
             aws ecs update-service \
