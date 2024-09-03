@@ -1,369 +1,369 @@
-name: Build and Deploy to ECS
+# name: Build and Deploy to ECS
 
-on:
-  push:
-    branches:
-      - main
+# on:
+#   push:
+#     branches:
+#       - main
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
+# jobs:
+#   build-and-deploy:
+#     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v2
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v2
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: us-east-1
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+#       - name: Login to Amazon ECR
+#         id: login-ecr
+#         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Check and Create ECR Repository
-        run: |
-          ECR_REPOSITORY_NAME="demo"
-          REPO_EXISTS=$(aws ecr describe-repositories --repository-names $ECR_REPOSITORY_NAME --region us-east-1 --query 'repositories[0].repositoryName' --output text 2>/dev/null || echo "MISSING")
-          if [ "$REPO_EXISTS" == "MISSING" ]; then
-            echo "Repository $ECR_REPOSITORY_NAME does not exist. Creating..."
-            aws ecr create-repository --repository-name $ECR_REPOSITORY_NAME --region us-east-1
-          else
-            echo "Repository $ECR_REPOSITORY_NAME already exists. Skipping creation."
-          fi
+#       - name: Check and Create ECR Repository
+#         run: |
+#           ECR_REPOSITORY_NAME="demo"
+#           REPO_EXISTS=$(aws ecr describe-repositories --repository-names $ECR_REPOSITORY_NAME --region us-east-1 --query 'repositories[0].repositoryName' --output text 2>/dev/null || echo "MISSING")
+#           if [ "$REPO_EXISTS" == "MISSING" ]; then
+#             echo "Repository $ECR_REPOSITORY_NAME does not exist. Creating..."
+#             aws ecr create-repository --repository-name $ECR_REPOSITORY_NAME --region us-east-1
+#           else
+#             echo "Repository $ECR_REPOSITORY_NAME already exists. Skipping creation."
+#           fi
 
-      - name: Build, Tag, and Push Images to Amazon ECR
-        id: build-and-push
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: demo
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          DOCKERFILES=$(find . -name 'Dockerfile*')
-          > image-uris.txt
+#       - name: Build, Tag, and Push Images to Amazon ECR
+#         id: build-and-push
+#         env:
+#           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+#           ECR_REPOSITORY: demo
+#           IMAGE_TAG: ${{ github.sha }}
+#         run: |
+#           DOCKERFILES=$(find . -name 'Dockerfile*')
+#           > image-uris.txt
           
-          for DOCKERFILE in $DOCKERFILES; do
-            BASENAME=$(basename $DOCKERFILE)
-            TAG=${BASENAME//Dockerfile_/}
-            TAG=${TAG:-default}
+#           for DOCKERFILE in $DOCKERFILES; do
+#             BASENAME=$(basename $DOCKERFILE)
+#             TAG=${BASENAME//Dockerfile_/}
+#             TAG=${TAG:-default}
             
-            IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$TAG-$IMAGE_TAG"
+#             IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$TAG-$IMAGE_TAG"
             
-            echo "Building and pushing Docker image for $DOCKERFILE to $IMAGE_URI"
+#             echo "Building and pushing Docker image for $DOCKERFILE to $IMAGE_URI"
             
-            docker build -f $DOCKERFILE -t $IMAGE_URI .
-            docker push $IMAGE_URI
+#             docker build -f $DOCKERFILE -t $IMAGE_URI .
+#             docker push $IMAGE_URI
             
-            echo "$TAG:$IMAGE_URI" >> image-uris.txt
-          done
-          # Set IMAGE_URI output
-          echo "::set-output name=image_uri::$IMAGE_URI"
+#             echo "$TAG:$IMAGE_URI" >> image-uris.txt
+#           done
+#           # Set IMAGE_URI output
+#           echo "::set-output name=image_uri::$IMAGE_URI"
 
-      - name: Verify Image URIs
-        run: |
-          echo "Contents of image-uris.txt:"
-          cat image-uris.txt
+#       - name: Verify Image URIs
+#         run: |
+#           echo "Contents of image-uris.txt:"
+#           cat image-uris.txt
 
-      - name: Install AWS CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y awscli
-          aws --version
+#       - name: Install AWS CLI
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y awscli
+#           aws --version
 
-      - name: Create IAM Role for ECS Task and Fetch ARN
-        id: create-iam-role
-        run: |
-          ROLE_NAME="ecsTaskExecutionRole"
-          ROLE_EXISTS=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.RoleName' --output text 2>/dev/null || echo "false")
+#       - name: Create IAM Role for ECS Task and Fetch ARN
+#         id: create-iam-role
+#         run: |
+#           ROLE_NAME="ecsTaskExecutionRole"
+#           ROLE_EXISTS=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.RoleName' --output text 2>/dev/null || echo "false")
           
-          if [ "$ROLE_EXISTS" != "$ROLE_NAME" ]; then
-            echo "Creating IAM role '$ROLE_NAME'..."
-            aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document '{
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": "ecs-tasks.amazonaws.com"
-                        },
-                        "Action": "sts:AssumeRole"
-                    }
-                ]
-            }'
-          else
-            echo "IAM role '$ROLE_NAME' already exists. Skipping creation."
-          fi
+#           if [ "$ROLE_EXISTS" != "$ROLE_NAME" ]; then
+#             echo "Creating IAM role '$ROLE_NAME'..."
+#             aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document '{
+#                 "Version": "2012-10-17",
+#                 "Statement": [
+#                     {
+#                         "Effect": "Allow",
+#                         "Principal": {
+#                             "Service": "ecs-tasks.amazonaws.com"
+#                         },
+#                         "Action": "sts:AssumeRole"
+#                     }
+#                 ]
+#             }'
+#           else
+#             echo "IAM role '$ROLE_NAME' already exists. Skipping creation."
+#           fi
 
-          POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name $ROLE_NAME --query 'AttachedPolicies[?PolicyName==`ECSServicePolicy`].PolicyName' --output text 2>/dev/null || echo "false")
+#           POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name $ROLE_NAME --query 'AttachedPolicies[?PolicyName==`ECSServicePolicy`].PolicyName' --output text 2>/dev/null || echo "false")
           
-          if [ "$POLICY_EXISTS" != "ECSServicePolicy" ]; then
-            echo "Attaching policy 'ECSServicePolicy'..."
-            aws iam put-role-policy --role-name $ROLE_NAME --policy-name ECSServicePolicy --policy-document '{
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Action": [
-                            "ecs:UpdateService",
-                            "ecs:DescribeServices",
-                            "ecs:DescribeTasks",
-                            "ecr:GetAuthorizationToken",
-                            "ecr:BatchCheckLayerAvailability",
-                            "ecr:GetDownloadUrlForLayer",
-                            "ecr:BatchGetImage",
-                            "sts:GetCallerIdentity"
-                        ],
-                        "Resource": "*"
-                    }
-                ]
-            }'
-          else
-            echo "Policy 'ECSServicePolicy' already attached. Skipping attachment."
-          fi
+#           if [ "$POLICY_EXISTS" != "ECSServicePolicy" ]; then
+#             echo "Attaching policy 'ECSServicePolicy'..."
+#             aws iam put-role-policy --role-name $ROLE_NAME --policy-name ECSServicePolicy --policy-document '{
+#                 "Version": "2012-10-17",
+#                 "Statement": [
+#                     {
+#                         "Effect": "Allow",
+#                         "Action": [
+#                             "ecs:UpdateService",
+#                             "ecs:DescribeServices",
+#                             "ecs:DescribeTasks",
+#                             "ecr:GetAuthorizationToken",
+#                             "ecr:BatchCheckLayerAvailability",
+#                             "ecr:GetDownloadUrlForLayer",
+#                             "ecr:BatchGetImage",
+#                             "sts:GetCallerIdentity"
+#                         ],
+#                         "Resource": "*"
+#                     }
+#                 ]
+#             }'
+#           else
+#             echo "Policy 'ECSServicePolicy' already attached. Skipping attachment."
+#           fi
 
-          POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name $ROLE_NAME --query 'AttachedPolicies[?PolicyName==`ECRLoggingPolicy`].PolicyName' --output text 2>/dev/null || echo "false")
+#           POLICY_EXISTS=$(aws iam list-attached-role-policies --role-name $ROLE_NAME --query 'AttachedPolicies[?PolicyName==`ECRLoggingPolicy`].PolicyName' --output text 2>/dev/null || echo "false")
           
-          if [ "$POLICY_EXISTS" != "ECRLoggingPolicy" ]; then
-            echo "Attaching policy 'ECRLoggingPolicy'..."
-            aws iam put-role-policy --role-name $ROLE_NAME --policy-name ECRLoggingPolicy --policy-document '{
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Action": [
-                            "ecr:GetAuthorizationToken",
-                            "ecr:BatchCheckLayerAvailability",
-                            "ecr:GetDownloadUrlForLayer",
-                            "ecr:BatchGetImage",
-                            "logs:CreateLogStream",
-                            "logs:PutLogEvents"
-                        ],
-                        "Resource": "*"
-                    }
-                ]
-            }'
-          else
-            echo "Policy 'ECRLoggingPolicy' already attached. Skipping attachment."
-          fi
+#           if [ "$POLICY_EXISTS" != "ECRLoggingPolicy" ]; then
+#             echo "Attaching policy 'ECRLoggingPolicy'..."
+#             aws iam put-role-policy --role-name $ROLE_NAME --policy-name ECRLoggingPolicy --policy-document '{
+#                 "Version": "2012-10-17",
+#                 "Statement": [
+#                     {
+#                         "Effect": "Allow",
+#                         "Action": [
+#                             "ecr:GetAuthorizationToken",
+#                             "ecr:BatchCheckLayerAvailability",
+#                             "ecr:GetDownloadUrlForLayer",
+#                             "ecr:BatchGetImage",
+#                             "logs:CreateLogStream",
+#                             "logs:PutLogEvents"
+#                         ],
+#                         "Resource": "*"
+#                     }
+#                 ]
+#             }'
+#           else
+#             echo "Policy 'ECRLoggingPolicy' already attached. Skipping attachment."
+#           fi
 
-          ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
-          echo "IAM Role ARN: $ROLE_ARN"
-          echo "::set-output name=role_arn::$ROLE_ARN"
+#           ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
+#           echo "IAM Role ARN: $ROLE_ARN"
+#           echo "::set-output name=role_arn::$ROLE_ARN"
 
-      - name: Create S3 Bucket for Robot Framework Results
-        id: create-s3-bucket
-        run: |
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
-          BUCKET_NAME="my-robot-results-bucket-$TIMESTAMP"
-          echo "Using bucket name: $BUCKET_NAME"
+#       - name: Create S3 Bucket for Robot Framework Results
+#         id: create-s3-bucket
+#         run: |
+#           TIMESTAMP=$(date +%Y%m%d%H%M%S)
+#           BUCKET_NAME="my-robot-results-bucket-$TIMESTAMP"
+#           echo "Using bucket name: $BUCKET_NAME"
       
-          if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
-            echo "Bucket does not exist. Creating bucket..."
-            aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1
-            if [ $? -eq 0 ]; then
-              echo "Bucket $BUCKET_NAME created successfully."
-            else
-              echo "Failed to create bucket $BUCKET_NAME."
-              exit 1
-            fi
-          else
-            echo "Bucket $BUCKET_NAME already exists. Skipping creation."
-          fi
-          echo "::set-output name=bucket_name::$BUCKET_NAME"
+#           if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
+#             echo "Bucket does not exist. Creating bucket..."
+#             aws s3api create-bucket --bucket $BUCKET_NAME --region us-east-1
+#             if [ $? -eq 0 ]; then
+#               echo "Bucket $BUCKET_NAME created successfully."
+#             else
+#               echo "Failed to create bucket $BUCKET_NAME."
+#               exit 1
+#             fi
+#           else
+#             echo "Bucket $BUCKET_NAME already exists. Skipping creation."
+#           fi
+#           echo "::set-output name=bucket_name::$BUCKET_NAME"
 
-      - name: Create Log Group
-        run: |
-          aws logs create-log-group --log-group-name /ecs/my-task || true
+#       - name: Create Log Group
+#         run: |
+#           aws logs create-log-group --log-group-name /ecs/my-task || true
 
-      - name: Create ECS Cluster
-        run: |
-          CLUSTER_NAME="my-cluster"
+#       - name: Create ECS Cluster
+#         run: |
+#           CLUSTER_NAME="my-cluster"
           
-          # Check if the cluster exists
-          CLUSTER_EXISTS=$(aws ecs describe-clusters --clusters $CLUSTER_NAME --query "clusters[?clusterName=='$CLUSTER_NAME'].clusterName" --output text)
+#           # Check if the cluster exists
+#           CLUSTER_EXISTS=$(aws ecs describe-clusters --clusters $CLUSTER_NAME --query "clusters[?clusterName=='$CLUSTER_NAME'].clusterName" --output text)
           
-          if [ "$CLUSTER_EXISTS" == "$CLUSTER_NAME" ]; then
-            echo "Cluster $CLUSTER_NAME already exists. Skipping creation."
-          else
-            echo "Creating ECS cluster $CLUSTER_NAME..."
-            aws ecs create-cluster --cluster-name $CLUSTER_NAME
-            echo "Cluster $CLUSTER_NAME created successfully."
-          fi
+#           if [ "$CLUSTER_EXISTS" == "$CLUSTER_NAME" ]; then
+#             echo "Cluster $CLUSTER_NAME already exists. Skipping creation."
+#           else
+#             echo "Creating ECS cluster $CLUSTER_NAME..."
+#             aws ecs create-cluster --cluster-name $CLUSTER_NAME
+#             echo "Cluster $CLUSTER_NAME created successfully."
+#           fi
 
-    # Register ECS Task Definition
-      - name: Register ECS Task Definition
-        id: register-task-def
-        run: |
-          CLUSTER_NAME=my-cluster
-          TASK_DEFINITION_NAME=my-task
-          DOCKERFILES=$(find . -name 'Dockerfile*')
-          CONTAINERS_JSON=""
-          PORT=8080  # Starting port for containerPort and hostPort
-          CONTAINER_CPU=256  # CPU units for each container
-          CONTAINER_MEMORY=512  # Memory for each container
-          TOTAL_CPU=0
-          TOTAL_MEMORY=0
-          echo "Reading image URIs from image-uris.txt..."
-          cat image-uris.txt
-          # Read image URIs from the file
-          while IFS=: read -r TAG IMAGE_URI; do
-            CONTAINER_NAME="${TAG}-container"
-            TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
-            TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
-            if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
-              CONTAINERS_JSON+="{
-                \"name\": \"$CONTAINER_NAME\",
-                \"image\": \"$IMAGE_URI\",
-                \"essential\": true,
-                \"memory\": $CONTAINER_MEMORY,
-                \"cpu\": $CONTAINER_CPU,
-                \"portMappings\": [
-                  {
-                    \"containerPort\": $PORT,
-                    \"hostPort\": $PORT
-                  }
-                ],
-                \"logConfiguration\": {
-                  \"logDriver\": \"awslogs\",
-                  \"options\": {
-                    \"awslogs-group\": \"/ecs/$TASK_DEFINITION_NAME\",
-                    \"awslogs-region\": \"us-east-1\",
-                    \"awslogs-stream-prefix\": \"$CONTAINER_NAME\"
-                  }
-                }
-              },"
-              PORT=$((PORT + 1))  # Increment port for next container
-            else
-              echo "Skipping container $CONTAINER_NAME due to resource limits."
-            fi
-          done < image-uris.txt
-          # Remove the trailing comma
-          CONTAINERS_JSON=${CONTAINERS_JSON%,}
-          TASK_DEF_JSON="{
-            \"family\": \"$TASK_DEFINITION_NAME\",
-            \"networkMode\": \"awsvpc\",
-            \"containerDefinitions\": [
-              $CONTAINERS_JSON
-            ],
-            \"requiresCompatibilities\": [\"FARGATE\"],
-            \"cpu\": \"1024\",
-            \"memory\": \"2048\",
-            \"executionRoleArn\": \"${{ steps.create-iam-role.outputs.role_arn }}\"
-          }"
-          echo "$TASK_DEF_JSON" > task-definition.json
-          aws ecs register-task-definition --cli-input-json file://task-definition.json
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+#     # Register ECS Task Definition
+#       - name: Register ECS Task Definition
+#         id: register-task-def
+#         run: |
+#           CLUSTER_NAME=my-cluster
+#           TASK_DEFINITION_NAME=my-task
+#           DOCKERFILES=$(find . -name 'Dockerfile*')
+#           CONTAINERS_JSON=""
+#           PORT=8080  # Starting port for containerPort and hostPort
+#           CONTAINER_CPU=256  # CPU units for each container
+#           CONTAINER_MEMORY=512  # Memory for each container
+#           TOTAL_CPU=0
+#           TOTAL_MEMORY=0
+#           echo "Reading image URIs from image-uris.txt..."
+#           cat image-uris.txt
+#           # Read image URIs from the file
+#           while IFS=: read -r TAG IMAGE_URI; do
+#             CONTAINER_NAME="${TAG}-container"
+#             TOTAL_CPU=$((TOTAL_CPU + CONTAINER_CPU))
+#             TOTAL_MEMORY=$((TOTAL_MEMORY + CONTAINER_MEMORY))
+#             if [ $TOTAL_CPU -le 1024 ] && [ $TOTAL_MEMORY -le 2048 ]; then
+#               CONTAINERS_JSON+="{
+#                 \"name\": \"$CONTAINER_NAME\",
+#                 \"image\": \"$IMAGE_URI\",
+#                 \"essential\": true,
+#                 \"memory\": $CONTAINER_MEMORY,
+#                 \"cpu\": $CONTAINER_CPU,
+#                 \"portMappings\": [
+#                   {
+#                     \"containerPort\": $PORT,
+#                     \"hostPort\": $PORT
+#                   }
+#                 ],
+#                 \"logConfiguration\": {
+#                   \"logDriver\": \"awslogs\",
+#                   \"options\": {
+#                     \"awslogs-group\": \"/ecs/$TASK_DEFINITION_NAME\",
+#                     \"awslogs-region\": \"us-east-1\",
+#                     \"awslogs-stream-prefix\": \"$CONTAINER_NAME\"
+#                   }
+#                 }
+#               },"
+#               PORT=$((PORT + 1))  # Increment port for next container
+#             else
+#               echo "Skipping container $CONTAINER_NAME due to resource limits."
+#             fi
+#           done < image-uris.txt
+#           # Remove the trailing comma
+#           CONTAINERS_JSON=${CONTAINERS_JSON%,}
+#           TASK_DEF_JSON="{
+#             \"family\": \"$TASK_DEFINITION_NAME\",
+#             \"networkMode\": \"awsvpc\",
+#             \"containerDefinitions\": [
+#               $CONTAINERS_JSON
+#             ],
+#             \"requiresCompatibilities\": [\"FARGATE\"],
+#             \"cpu\": \"1024\",
+#             \"memory\": \"2048\",
+#             \"executionRoleArn\": \"${{ steps.create-iam-role.outputs.role_arn }}\"
+#           }"
+#           echo "$TASK_DEF_JSON" > task-definition.json
+#           aws ecs register-task-definition --cli-input-json file://task-definition.json
+#         env:
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           AWS_DEFAULT_REGION: us-east-1
 
-      - name: Get Subnets
-        id: get-subnets
-        run: |
-          # Retrieve default subnets and format them
-          DEFAULT_SUBNETS=$(aws ec2 describe-subnets --filters "Name=default-for-az,Values=true" --query 'Subnets[*].SubnetId' --output text | tr '\t' ',' | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
-          echo "DEFAULT_SUBNETS=$DEFAULT_SUBNETS" >> $GITHUB_ENV
-          echo "::set-output name=DEFAULT_SUBNETS::$DEFAULT_SUBNETS"
+#       - name: Get Subnets
+#         id: get-subnets
+#         run: |
+#           # Retrieve default subnets and format them
+#           DEFAULT_SUBNETS=$(aws ec2 describe-subnets --filters "Name=default-for-az,Values=true" --query 'Subnets[*].SubnetId' --output text | tr '\t' ',' | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+#           echo "DEFAULT_SUBNETS=$DEFAULT_SUBNETS" >> $GITHUB_ENV
+#           echo "::set-output name=DEFAULT_SUBNETS::$DEFAULT_SUBNETS"
 
-      - name: Get VPC ID
-        id: get-vpc
-        run: |
-          # Retrieve the VPC ID (assuming there's only one VPC; adjust if necessary)
-          VPC_ID=$(aws ec2 describe-vpcs --query 'Vpcs[0].VpcId' --output text --region us-east-1)
-          echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
-          echo "::set-output name=vpc_id::$VPC_ID"
+#       - name: Get VPC ID
+#         id: get-vpc
+#         run: |
+#           # Retrieve the VPC ID (assuming there's only one VPC; adjust if necessary)
+#           VPC_ID=$(aws ec2 describe-vpcs --query 'Vpcs[0].VpcId' --output text --region us-east-1)
+#           echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
+#           echo "::set-output name=vpc_id::$VPC_ID"
   
-      - name: Get Security Group ID
-        id: setup-sg
-        run: |
-          VPC_ID=${{ steps.get-vpc.outputs.vpc_id }}
+#       - name: Get Security Group ID
+#         id: setup-sg
+#         run: |
+#           VPC_ID=${{ steps.get-vpc.outputs.vpc_id }}
           
-          # Check if the security group already exists
-          SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=my-security-group" --query 'SecurityGroups[0].GroupId' --output text --region us-east-1)
+#           # Check if the security group already exists
+#           SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=my-security-group" --query 'SecurityGroups[0].GroupId' --output text --region us-east-1)
           
-          if [ "$SECURITY_GROUP_ID" != "" ]; then
-            echo "Security group already exists. Using existing security group ID: $SECURITY_GROUP_ID"
-            echo "sg_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
-            echo "::set-output name=sg_id::$SECURITY_GROUP_ID"
-          else
-            # Generate a unique name for the new security group
-            SG_NAME="my-security-group-$(date +%s)"
+#           if [ "$SECURITY_GROUP_ID" != "" ]; then
+#             echo "Security group already exists. Using existing security group ID: $SECURITY_GROUP_ID"
+#             echo "sg_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
+#             echo "::set-output name=sg_id::$SECURITY_GROUP_ID"
+#           else
+#             # Generate a unique name for the new security group
+#             SG_NAME="my-security-group-$(date +%s)"
             
-            # Create the new security group
-            SG_ID=$(aws ec2 create-security-group --group-name $SG_NAME --description "Security group for ECS tasks" --vpc-id $VPC_ID --query 'GroupId' --output text --region us-east-1)
-            echo "Created Security Group ID: $SG_ID"
+#             # Create the new security group
+#             SG_ID=$(aws ec2 create-security-group --group-name $SG_NAME --description "Security group for ECS tasks" --vpc-id $VPC_ID --query 'GroupId' --output text --region us-east-1)
+#             echo "Created Security Group ID: $SG_ID"
             
-            # Add an ingress rule to allow traffic on port 80 (HTTP)
-            aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0 --region us-east-1
-            echo "Ingress rule added to Security Group ID: $SG_ID"
+#             # Add an ingress rule to allow traffic on port 80 (HTTP)
+#             aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0 --region us-east-1
+#             echo "Ingress rule added to Security Group ID: $SG_ID"
             
-            echo "sg_id=$SG_ID" >> $GITHUB_ENV
-            echo "::set-output name=sg_id::$SG_ID"
-          fi
+#             echo "sg_id=$SG_ID" >> $GITHUB_ENV
+#             echo "::set-output name=sg_id::$SG_ID"
+#           fi
       
-      - name: Create or Update ECS Service
-        shell: bash
-        run: |
-          CLUSTER_NAME=my-cluster
-          SERVICE_NAME=my-service
-          TASK_DEFINITION_NAME=my-task
-          SUBNETS=$(echo ${{ steps.get-subnets.outputs.DEFAULT_SUBNETS }} | tr -d '[]"')
+#       - name: Create or Update ECS Service
+#         shell: bash
+#         run: |
+#           CLUSTER_NAME=my-cluster
+#           SERVICE_NAME=my-service
+#           TASK_DEFINITION_NAME=my-task
+#           SUBNETS=$(echo ${{ steps.get-subnets.outputs.DEFAULT_SUBNETS }} | tr -d '[]"')
 
-          echo "Subnets being used: $SUBNETS"
+#           echo "Subnets being used: $SUBNETS"
 
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null)
-          if [ -z "$SERVICE_EXISTS" ]; then
-            SERVICE_EXISTS="MISSING"
-          fi
+#           SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null)
+#           if [ -z "$SERVICE_EXISTS" ]; then
+#             SERVICE_EXISTS="MISSING"
+#           fi
 
-          if [ "$SERVICE_EXISTS" == "MISSING" ]; then
-            aws ecs create-service \
-              --cluster $CLUSTER_NAME \
-              --service-name $SERVICE_NAME \
-              --task-definition $TASK_DEFINITION_NAME \
-              --desired-count 1 \
-              --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[${{ steps.setup-sg.outputs.sg_id }}],assignPublicIp=ENABLED}" \
-              --region us-east-1
-          else
-            aws ecs update-service \
-              --cluster $CLUSTER_NAME \
-              --service-name $SERVICE_NAME \
-              --task-definition $TASK_DEFINITION_NAME \
-              --region us-east-1
-          fi
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          DEFAULT_SUBNETS: ${{ steps.get-subnets.outputs.DEFAULT_SUBNETS }}
-          VPC_ID: ${{ steps.get-vpc.outputs.vpc_id }}
-          sg_id: ${{ steps.setup-sg.outputs.sg_id }}
+#           if [ "$SERVICE_EXISTS" == "MISSING" ]; then
+#             aws ecs create-service \
+#               --cluster $CLUSTER_NAME \
+#               --service-name $SERVICE_NAME \
+#               --task-definition $TASK_DEFINITION_NAME \
+#               --desired-count 1 \
+#               --launch-type FARGATE \
+#               --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[${{ steps.setup-sg.outputs.sg_id }}],assignPublicIp=ENABLED}" \
+#               --region us-east-1
+#           else
+#             aws ecs update-service \
+#               --cluster $CLUSTER_NAME \
+#               --service-name $SERVICE_NAME \
+#               --task-definition $TASK_DEFINITION_NAME \
+#               --region us-east-1
+#           fi
+#         env:
+#           AWS_DEFAULT_REGION: us-east-1
+#           AWS_REGION: us-east-1
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           DEFAULT_SUBNETS: ${{ steps.get-subnets.outputs.DEFAULT_SUBNETS }}
+#           VPC_ID: ${{ steps.get-vpc.outputs.vpc_id }}
+#           sg_id: ${{ steps.setup-sg.outputs.sg_id }}
           
-       # Run Robot Framework Tests
-      - name: Run Robot Framework Tests
-        run: |
-          docker run --rm \
-            -v $PWD:/robot \
-            ${{ steps.build-and-push.outputs.IMAGE_URI }}
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#        # Run Robot Framework Tests
+#       - name: Run Robot Framework Tests
+#         run: |
+#           docker run --rm \
+#             -v $PWD:/robot \
+#             ${{ steps.build-and-push.outputs.IMAGE_URI }}
+#         env:
+#           AWS_DEFAULT_REGION: us-east-1
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Upload Logs to S3
-        run: |
-          BUCKET_NAME="my-robot-results-bucket"
-          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-          aws s3 cp log/ s3://$BUCKET_NAME/logs/$TIMESTAMP/ --recursive --region us-east-1
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
+#       - name: Upload Logs to S3
+#         run: |
+#           BUCKET_NAME="my-robot-results-bucket"
+#           TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+#           aws s3 cp log/ s3://$BUCKET_NAME/logs/$TIMESTAMP/ --recursive --region us-east-1
+#         env:
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           AWS_DEFAULT_REGION: us-east-1
