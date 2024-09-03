@@ -312,16 +312,19 @@ jobs:
           CLUSTER_NAME=my-cluster
           SERVICE_NAME=my-service
           TASK_DEFINITION_NAME=my-task
-      
+        
           # Convert the subnets environment variable to a comma-separated string
           # Remove the quotes around subnet IDs and format as JSON array
           SUBNETS=$(echo $DEFAULT_SUBNETS | tr -d '[]"')
-      
+        
           echo "Subnets being used: $SUBNETS"
-      
+        
           # Check if the service already exists
-          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null || echo "MISSING")
-      
+          SERVICE_EXISTS=$(aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME --query 'services[0].status' --output text --region us-east-1 2>/dev/null)
+          if [ -z "$SERVICE_EXISTS" ]; then
+            SERVICE_EXISTS="MISSING"
+          fi
+        
           if [ "$SERVICE_EXISTS" == "MISSING" ]; then
             # Create the service if it doesn't exist
             aws ecs create-service \
