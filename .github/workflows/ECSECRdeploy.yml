@@ -3,7 +3,7 @@ name: Run RR Tests - Web
 on:
   push:
     branches:
-      - RR-WEB-execution
+      - main
 
 jobs:
   build-and-deploy:
