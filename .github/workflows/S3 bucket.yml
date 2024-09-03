@@ -287,8 +287,10 @@ jobs:
           # Check if the security group already exists
           SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=my-security-group" --query 'SecurityGroups[0].GroupId' --output text --region us-east-1)
           
-          if [ "$SECURITY_GROUP_ID" != "None" ]; then
+          if [ "$SECURITY_GROUP_ID" != "" ]; then
+            echo "Security group already exists. Using existing security group ID: $SECURITY_GROUP_ID"
             echo "sg_id=$SECURITY_GROUP_ID" >> $GITHUB_ENV
+            echo "::set-output name=sg_id::$SECURITY_GROUP_ID"
           else
             # Generate a unique name for the new security group
             SG_NAME="my-security-group-$(date +%s)"
@@ -302,9 +304,8 @@ jobs:
             echo "Ingress rule added to Security Group ID: $SG_ID"
             
             echo "sg_id=$SG_ID" >> $GITHUB_ENV
+            echo "::set-output name=sg_id::$SG_ID"
           fi
-          
-          echo "::set-output name=sg_id::$SG_ID"
       
       - name: Create or Update ECS Service
         shell: bash
